@@ -162,8 +162,12 @@ function updateValuation(data) {
 function updatePhase(data) {
     const phase = data.phase || {};
     const forecast = data.forecast?.transition || {};
+    const intel = data.cycle_intelligence?.current_phase || {};
 
-    document.getElementById('phase-name').textContent = phase.phase || '--';
+    // Use friendly display name if available, fallback to raw phase
+    const displayName = intel.display_name || phase.phase || '--';
+    const emoji = intel.emoji || '';
+    document.getElementById('phase-name').textContent = emoji + ' ' + displayName;
     document.getElementById('phase-confidence').textContent =
         (phase.phase_confidence || 0).toFixed(0) + '% conf';
 
@@ -367,6 +371,18 @@ function updateCycleIntelligence(data) {
     const metrics = intel.cycle_metrics || {};
     const behavior = intel.behavior_guide || {};
     const timing = intel.timing_estimates || {};
+
+    // Display name and simple explanation (new in v7.1)
+    const displayNameEl = document.getElementById('phase-display-name');
+    if (displayNameEl) {
+        const emoji = current.emoji || '';
+        displayNameEl.textContent = emoji + ' ' + (current.display_name || current.name || '--');
+    }
+
+    const simpleExplanationEl = document.getElementById('simple-explanation');
+    if (simpleExplanationEl) {
+        simpleExplanationEl.textContent = current.simple_explanation || '';
+    }
 
     // Position badge
     document.getElementById('cycle-position').textContent =

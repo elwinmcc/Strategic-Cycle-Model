@@ -33,6 +33,18 @@ class CycleIntelligenceEngine:
     Explains WHERE we are, WHY, and WHAT to expect.
     """
 
+    # User-friendly phase names (technical name -> display name)
+    PHASE_DISPLAY_NAMES = {
+        'CAPITULATION': 'Cycle Bottom',
+        'ACCUMULATION': 'Recovery / Accumulation',
+        'EARLY_MARKUP': 'Early Bull Market',
+        'MID_MARKUP': 'Bull Market',
+        'LATE_MARKUP': 'Late Bull / Peak Zone',
+        'DISTRIBUTION': 'Cycle Top / Distribution',
+        'EARLY_MARKDOWN': 'Early Bear Market',
+        'MID_MARKDOWN': 'Bear Market'
+    }
+
     # Historical cycle data for context
     CYCLE_HISTORY = {
         'cycle_1': {'bottom': '2011-11', 'top': '2013-11', 'bottom_price': 2, 'top_price': 1150, 'multiple': 575},
@@ -44,7 +56,9 @@ class CycleIntelligenceEngine:
     # Phase characteristics for education
     PHASE_EDUCATION = {
         'CAPITULATION': {
-            'description': 'Maximum fear and despair. Weak hands capitulate, selling at a loss.',
+            'display_name': 'Cycle Bottom',
+            'simple_explanation': 'The market has crashed. Everyone is scared. This is where generational wealth is made.',
+            'description': 'Maximum fear and despair. Weak hands capitulate, selling at a loss. Price is below what most holders paid (realized price).',
             'psychology': 'Denial → Panic → Capitulation → Depression',
             'typical_mvrv': '< 0.5 (below realized price)',
             'typical_duration': '2-4 months',
@@ -52,12 +66,15 @@ class CycleIntelligenceEngine:
             'smart_money_behavior': 'Aggressive accumulation by long-term holders',
             'retail_behavior': 'Panic selling, declaring "crypto is dead"',
             'media_sentiment': 'Obituaries, regulatory FUD, "bubble popped"',
-            'what_to_do': 'Maximum conviction buying. This is generational opportunity.',
+            'what_to_do': 'Maximum conviction buying. This is generational opportunity. Back up the truck.',
             'historical_examples': ['Dec 2018 ($3,150)', 'Mar 2020 ($3,800)', 'Nov 2022 ($15,500)'],
-            'key_signals_to_exit': ['MVRV crosses above 0', 'F&G sustained >25', 'Price reclaims 200D MA']
+            'key_signals_to_exit': ['MVRV crosses above 0', 'F&G sustained >25', 'Price reclaims 200D MA'],
+            'emoji': '🩸'
         },
         'ACCUMULATION': {
-            'description': 'Smart money quietly accumulates while retail remains fearful.',
+            'display_name': 'Recovery / Accumulation',
+            'simple_explanation': 'The bleeding has stopped. Smart money is quietly buying while most people are still scared.',
+            'description': 'Post-crash recovery. Smart money quietly accumulates while retail remains fearful and skeptical.',
             'psychology': 'Depression → Disbelief → Hope',
             'typical_mvrv': '0.5 - 1.5',
             'typical_duration': '6-12 months',
@@ -65,12 +82,15 @@ class CycleIntelligenceEngine:
             'smart_money_behavior': 'Steady accumulation, building positions',
             'retail_behavior': 'Skeptical, "dead cat bounce" calls, low engagement',
             'media_sentiment': 'Cautious, "crypto winter", focus on failures',
-            'what_to_do': 'Continue accumulating. DCA aggressively. Build full position.',
+            'what_to_do': 'Continue accumulating. DCA aggressively. Build your full position before the bull starts.',
             'historical_examples': ['Q1-Q3 2019', 'Q2-Q4 2020', 'Q1-Q3 2023'],
-            'key_signals_to_exit': ['MVRV > 1.5', 'Break above 200D MA with volume', 'ETF/institutional inflows']
+            'key_signals_to_exit': ['MVRV > 1.5', 'Break above 200D MA with volume', 'ETF/institutional inflows'],
+            'emoji': '🌱'
         },
         'EARLY_MARKUP': {
-            'description': 'Trend confirmation. Early adopters recognize the new bull market.',
+            'display_name': 'Early Bull Market',
+            'simple_explanation': 'The bull market has started! Early adopters are getting in. Still lots of upside ahead.',
+            'description': 'Bull market confirmed. Trend has reversed. Early adopters recognize the new cycle while skeptics still doubt.',
             'psychology': 'Hope → Optimism → Belief',
             'typical_mvrv': '1.5 - 2.5',
             'typical_duration': '3-6 months',
@@ -78,12 +98,15 @@ class CycleIntelligenceEngine:
             'smart_money_behavior': 'Holding core positions, adding on dips',
             'retail_behavior': 'Starting to notice, FOMO beginning, "maybe it\'s real"',
             'media_sentiment': 'Cautiously positive, "recovery", institutional interest stories',
-            'what_to_do': 'Hold positions. Buy dips. Do NOT sell early.',
+            'what_to_do': 'HOLD your positions. Buy dips aggressively. Do NOT sell too early - biggest gains are ahead.',
             'historical_examples': ['Q4 2020', 'Q4 2023 - Q1 2024'],
-            'key_signals_to_exit': ['MVRV > 2.5', 'Weekly RSI > 70', 'Mainstream media attention']
+            'key_signals_to_exit': ['MVRV > 2.5', 'Weekly RSI > 70', 'Mainstream media attention'],
+            'emoji': '🌤️'
         },
         'MID_MARKUP': {
-            'description': 'Bull market in full swing. Retail FOMO accelerates.',
+            'display_name': 'Bull Market',
+            'simple_explanation': 'Full bull market mode. Everyone is making money. Start planning your exit strategy.',
+            'description': 'Bull market in full swing. Price climbing steadily. Retail FOMO accelerating. Greed increasing.',
             'psychology': 'Belief → Thrill → Euphoria building',
             'typical_mvrv': '2.5 - 4.0',
             'typical_duration': '4-8 months',
@@ -91,12 +114,15 @@ class CycleIntelligenceEngine:
             'smart_money_behavior': 'Beginning to take profits, rotating to alts',
             'retail_behavior': 'Full FOMO, leveraged longs, "this time is different"',
             'media_sentiment': 'Bullish, price predictions, celebrity endorsements',
-            'what_to_do': 'Begin scaling out plan. Take 10-20% profits. Set trailing stops.',
+            'what_to_do': 'Create your exit plan NOW. Take 10-20% profits. Set trailing stops. Don\'t get greedy.',
             'historical_examples': ['Q1-Q2 2021', 'Q1-Q2 2024'],
-            'key_signals_to_exit': ['MVRV > 4.0', 'Pi Cycle approaching', 'Extreme F&G (>80)']
+            'key_signals_to_exit': ['MVRV > 4.0', 'Pi Cycle approaching', 'Extreme F&G (>80)'],
+            'emoji': '☀️'
         },
         'LATE_MARKUP': {
-            'description': 'Final euphoric push. Parabolic moves. Maximum greed.',
+            'display_name': 'Late Bull / Peak Zone',
+            'simple_explanation': 'DANGER ZONE. Parabolic moves. Maximum greed. This is where you SELL, not buy.',
+            'description': 'Final euphoric push. Parabolic price action. Maximum greed. Cycle peak approaching or occurring.',
             'psychology': 'Euphoria → Complacency → Anxiety',
             'typical_mvrv': '4.0 - 6.0+',
             'typical_duration': '1-3 months',
@@ -104,12 +130,15 @@ class CycleIntelligenceEngine:
             'smart_money_behavior': 'Distributing to retail, moving to stables',
             'retail_behavior': 'Maximum leverage, "we\'re going to $1M", quitting jobs',
             'media_sentiment': 'Mania, mainstream adoption hype, "new paradigm"',
-            'what_to_do': 'DISTRIBUTE. Sell 50-70% of position. This is the exit window.',
+            'what_to_do': 'SELL NOW. Distribute 50-70% of position. This is your exit window. Don\'t wait for the top.',
             'historical_examples': ['Nov-Dec 2017', 'Oct-Nov 2021'],
-            'key_signals_to_exit': ['MVRV > 5.5', 'Pi Cycle cross', 'Funding > 0.1%', 'Weekly RSI > 90']
+            'key_signals_to_exit': ['MVRV > 5.5', 'Pi Cycle cross', 'Funding > 0.1%', 'Weekly RSI > 90'],
+            'emoji': '🔥'
         },
         'DISTRIBUTION': {
-            'description': 'Smart money exits while retail still buying. Top formation.',
+            'display_name': 'Cycle Top / Distribution',
+            'simple_explanation': 'The top is in or forming. Smart money has exited. Don\'t be the last one holding.',
+            'description': 'Cycle top forming. Smart money exits while retail still buying dips. Bear market imminent.',
             'psychology': 'Anxiety → Denial → Fear',
             'typical_mvrv': '3.5 - 5.5 (declining from peak)',
             'typical_duration': '1-3 months',
@@ -117,25 +146,31 @@ class CycleIntelligenceEngine:
             'smart_money_behavior': 'Completed distribution, fully in stables',
             'retail_behavior': '"Buy the dip", "shakeout before $200K", denial',
             'media_sentiment': 'Mixed, "healthy correction", "institutional buying"',
-            'what_to_do': 'Complete distribution. Move to stables. Prepare for bear.',
+            'what_to_do': 'Complete your exit. Move to stables. Do NOT buy dips. Prepare for bear market.',
             'historical_examples': ['Dec 2017 - Jan 2018', 'Nov 2021 - Jan 2022'],
-            'key_signals_to_exit': ['Break below 50D MA', 'Lower highs forming', 'Volume declining on rallies']
+            'key_signals_to_exit': ['Break below 50D MA', 'Lower highs forming', 'Volume declining on rallies'],
+            'emoji': '⚠️'
         },
         'EARLY_MARKDOWN': {
-            'description': 'Bear market begins. Denial still high.',
+            'display_name': 'Early Bear Market',
+            'simple_explanation': 'Bear market has started. Denial is high. Every bounce is a trap. Stay out.',
+            'description': 'Bear market confirmed. Denial still high. Bounces are selling opportunities, not buying opportunities.',
             'psychology': 'Fear → Desperation',
             'typical_mvrv': '2.0 - 3.5 (declining)',
             'typical_duration': '2-4 months',
             'typical_drawdown': '40-50% from ATH',
-            'smart_money_behavior': 'Sidelined, looking for re-entry much lower',
+            'smart_money_behavior': 'Sidelined in stables, looking for re-entry much lower',
             'retail_behavior': 'Still buying dips, "diamond hands", copium',
             'media_sentiment': 'Concerned, regulatory fears, exchange issues',
-            'what_to_do': 'Stay in stables. Do NOT buy dips yet. Wait for capitulation.',
+            'what_to_do': 'Stay in stables. Do NOT buy dips yet. Every bounce is a trap. Wait for capitulation.',
             'historical_examples': ['Jan-May 2018', 'Jan-May 2022'],
-            'key_signals_to_exit': ['Break below 200D MA', 'MVRV < 2.0', 'Major liquidation events']
+            'key_signals_to_exit': ['Break below 200D MA', 'MVRV < 2.0', 'Major liquidation events'],
+            'emoji': '🌧️'
         },
         'MID_MARKDOWN': {
-            'description': 'Bear market deepens. Hope fades.',
+            'display_name': 'Bear Market',
+            'simple_explanation': 'Deep bear market. Hope is fading. Start preparing to buy - bottom is approaching.',
+            'description': 'Bear market deepens. Hope fading. Approaching capitulation. Smart money starts nibbling.',
             'psychology': 'Desperation → Panic → Capitulation approaching',
             'typical_mvrv': '0.5 - 2.0 (declining)',
             'typical_duration': '4-8 months',
@@ -143,9 +178,10 @@ class CycleIntelligenceEngine:
             'smart_money_behavior': 'Starting to scale in slowly at deep value',
             'retail_behavior': 'Giving up, selling at loss, "never again"',
             'media_sentiment': 'Bearish, obituaries, "I told you so"',
-            'what_to_do': 'Begin DCA into deep value zones. Prepare accumulation plan.',
+            'what_to_do': 'Start your DCA plan. Small buys at deep value. Prepare accumulation strategy for capitulation.',
             'historical_examples': ['Jun-Nov 2018', 'Jun-Nov 2022'],
-            'key_signals_to_exit': ['MVRV < 0.5', 'F&G < 15', 'Volume capitulation']
+            'key_signals_to_exit': ['MVRV < 0.5', 'F&G < 15', 'Volume capitulation'],
+            'emoji': '❄️'
         }
     }
 
@@ -175,6 +211,9 @@ class CycleIntelligenceEngine:
         return {
             'current_phase': {
                 'name': phase,
+                'display_name': education.get('display_name', self.PHASE_DISPLAY_NAMES.get(phase, phase)),
+                'simple_explanation': education.get('simple_explanation', ''),
+                'emoji': education.get('emoji', ''),
                 'description': education.get('description', ''),
                 'psychology': education.get('psychology', ''),
                 'typical_mvrv_range': education.get('typical_mvrv', ''),
@@ -208,28 +247,33 @@ class CycleIntelligenceEngine:
     def _where_we_are(self, phase: str, mvrv: float, progress: float) -> str:
         """Generate plain English explanation of current position"""
 
+        display_name = self.PHASE_DISPLAY_NAMES.get(phase, phase)
+
         if phase == 'CAPITULATION':
-            return f"We are in CAPITULATION - the bottom of the cycle. MVRV at {mvrv:.2f} indicates price is {'below' if mvrv < 1 else 'near'} realized value. This is historically the best buying opportunity. Only {progress:.0f}% through the cycle."
+            return f"We are at the CYCLE BOTTOM 🩸 - maximum fear and despair. MVRV at {mvrv:.2f} indicates price is {'below' if mvrv < 1 else 'near'} realized value. This is historically the BEST buying opportunity - generational wealth is made here. Only {progress:.0f}% through the cycle."
 
         elif phase == 'ACCUMULATION':
-            return f"We are in ACCUMULATION phase at {progress:.0f}% cycle progress. MVRV {mvrv:.2f} shows we're still in value territory. Smart money is building positions while retail remains skeptical. Continue accumulating."
+            return f"We are in RECOVERY / ACCUMULATION 🌱 at {progress:.0f}% cycle progress. MVRV {mvrv:.2f} shows we're still in value territory. Smart money is building positions while retail remains skeptical. Continue accumulating - the bull market hasn't started yet."
 
         elif phase == 'EARLY_MARKUP':
-            return f"We are in EARLY MARKUP - the bull market has been confirmed. At {progress:.0f}% cycle progress with MVRV {mvrv:.2f}, we're past the accumulation phase but still early. Hold positions and buy dips."
+            return f"We are in the EARLY BULL MARKET 🌤️ - the new uptrend has been confirmed! At {progress:.0f}% cycle progress with MVRV {mvrv:.2f}, we're past accumulation but still early in the bull run. HOLD positions and buy dips. Most gains are still ahead."
 
         elif phase == 'MID_MARKUP':
-            return f"We are in MID MARKUP at {progress:.0f}% cycle progress. MVRV {mvrv:.2f} shows we're in fair value territory. The bull is running. Start planning exit strategy but don't sell too early."
+            return f"We are in the BULL MARKET ☀️ at {progress:.0f}% cycle progress. MVRV {mvrv:.2f} shows we're in fair value territory. The bull is running strong! Start planning your exit strategy but don't sell too early - there's still upside."
 
         elif phase == 'LATE_MARKUP':
-            return f"We are in LATE MARKUP - approaching cycle peak. At {progress:.0f}% cycle progress with MVRV {mvrv:.2f}, we're in extended territory. This is the distribution window. Scale out 50-70% of position."
+            return f"We are in LATE BULL / PEAK ZONE 🔥 - approaching cycle top! At {progress:.0f}% cycle progress with MVRV {mvrv:.2f}, we're in EXTENDED territory. This is your EXIT window. Scale out 50-70% of position. Don't be greedy."
 
         elif phase == 'DISTRIBUTION':
-            return f"We are in DISTRIBUTION phase. Smart money is exiting at {progress:.0f}% cycle progress. MVRV {mvrv:.2f} indicates overvaluation. Complete your exit strategy. Bear market approaching."
+            return f"We are at the CYCLE TOP / DISTRIBUTION ⚠️ phase. Smart money has exited at {progress:.0f}% cycle progress. MVRV {mvrv:.2f} indicates overvaluation. Complete your exit NOW. Bear market is approaching."
 
-        elif phase in ['EARLY_MARKDOWN', 'MID_MARKDOWN']:
-            return f"We are in {phase.replace('_', ' ')} - bear market territory. At {progress:.0f}% cycle progress, wait for capitulation before buying. Preserve capital."
+        elif phase == 'EARLY_MARKDOWN':
+            return f"We are in the EARLY BEAR MARKET 🌧️ - the top is in. At {progress:.0f}% cycle progress, every bounce is a TRAP. Stay in stables. Wait for capitulation before buying. Preserve capital."
 
-        return f"Current phase: {phase} at {progress:.0f}% cycle progress with MVRV {mvrv:.2f}."
+        elif phase == 'MID_MARKDOWN':
+            return f"We are in the BEAR MARKET ❄️ - deep in the downtrend. At {progress:.0f}% cycle progress, hope is fading. Start preparing your DCA plan - the bottom is approaching. Small nibbles at deep value only."
+
+        return f"Current phase: {display_name} at {progress:.0f}% cycle progress with MVRV {mvrv:.2f}."
 
     def _estimate_cycle_position(self, mvrv: float, fg: int, drawdown: float) -> str:
         """Estimate where we are in the 4-year cycle"""
