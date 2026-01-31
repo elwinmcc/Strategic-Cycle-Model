@@ -65,6 +65,14 @@ function updateDashboard(data) {
     updateTrends(data);
     updateAltRotation(data);
     updateMonteCarlo(data);
+
+    // v7.1 Enhanced Sections
+    updateCycleIntelligence(data);
+    updateScenarios(data);
+    updateRiskManagement(data);
+    updateTradeLevels(data);
+    updateWatchlist(data);
+
     updateThesis(data);
     updateFooter(data);
 }
@@ -347,6 +355,250 @@ function updateMCHorizon(id, data) {
     returnEl.textContent = formatPercent(ret);
     returnEl.className = 'horizon-return ' + (ret >= 0 ? 'positive' : 'negative');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v7.1 ENHANCED INSIGHTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Cycle Intelligence updates
+function updateCycleIntelligence(data) {
+    const intel = data.cycle_intelligence || {};
+    const current = intel.current_phase || {};
+    const metrics = intel.cycle_metrics || {};
+    const behavior = intel.behavior_guide || {};
+    const timing = intel.timing_estimates || {};
+
+    // Position badge
+    document.getElementById('cycle-position').textContent =
+        metrics.estimated_position || 'UNKNOWN';
+
+    // Where we are explanation
+    document.getElementById('position-explanation').textContent =
+        current.where_we_are || 'Loading...';
+
+    // Psychology
+    document.getElementById('phase-psychology').textContent =
+        current.psychology || '--';
+
+    // Behaviors
+    document.getElementById('smart-money-behavior').textContent =
+        behavior.smart_money || '--';
+    document.getElementById('retail-behavior').textContent =
+        behavior.retail || '--';
+    document.getElementById('what-to-do').textContent =
+        behavior.what_you_should_do || '--';
+
+    // Metrics
+    document.getElementById('rally-from-low').textContent =
+        (metrics.rally_from_cycle_low_pct || 0).toFixed(0) + '%';
+    document.getElementById('dd-from-ath').textContent =
+        (metrics.drawdown_from_ath_pct || 0).toFixed(0) + '%';
+    document.getElementById('phase-duration').textContent =
+        current.typical_duration || '--';
+}
+
+// Scenario updates
+function updateScenarios(data) {
+    const scenarios = data.scenarios?.scenarios || {};
+    const expected = data.scenarios?.expected_value || {};
+
+    // Bull scenario
+    const bull = scenarios.bull || {};
+    const bullCard = document.getElementById('scenario-bull');
+    if (bullCard) {
+        bullCard.querySelector('.scenario-prob').textContent =
+            (bull.probability || 0) + '%';
+        bullCard.querySelector('.scenario-target').textContent =
+            formatCurrency(bull.target_12m || 0);
+
+        const bullCatalysts = document.getElementById('bull-catalysts');
+        if (bullCatalysts && bull.catalysts) {
+            bullCatalysts.innerHTML = '<ul>' +
+                bull.catalysts.slice(0, 3).map(c => `<li>${c}</li>`).join('') +
+                '</ul>';
+        }
+    }
+
+    // Base scenario
+    const base = scenarios.base || {};
+    const baseCard = document.getElementById('scenario-base');
+    if (baseCard) {
+        baseCard.querySelector('.scenario-prob').textContent =
+            (base.probability || 0) + '%';
+        baseCard.querySelector('.scenario-target').textContent =
+            formatCurrency(base.target_12m || 0);
+
+        const baseCatalysts = document.getElementById('base-catalysts');
+        if (baseCatalysts && base.catalysts) {
+            baseCatalysts.innerHTML = '<ul>' +
+                base.catalysts.slice(0, 3).map(c => `<li>${c}</li>`).join('') +
+                '</ul>';
+        }
+    }
+
+    // Bear scenario
+    const bear = scenarios.bear || {};
+    const bearCard = document.getElementById('scenario-bear');
+    if (bearCard) {
+        bearCard.querySelector('.scenario-prob').textContent =
+            (bear.probability || 0) + '%';
+        bearCard.querySelector('.scenario-target').textContent =
+            formatCurrency(bear.target_12m || 0);
+
+        const bearCatalysts = document.getElementById('bear-catalysts');
+        if (bearCatalysts && bear.catalysts) {
+            bearCatalysts.innerHTML = '<ul>' +
+                bear.catalysts.slice(0, 3).map(c => `<li>${c}</li>`).join('') +
+                '</ul>';
+        }
+    }
+
+    // Expected value
+    document.getElementById('expected-value').textContent =
+        formatCurrency(expected.expected_price_12m || 0);
+    document.getElementById('expected-return').textContent =
+        '(' + formatPercent(expected.expected_return_pct || 0) + ')';
+}
+
+// Risk Management updates
+function updateRiskManagement(data) {
+    const risk = data.risk_management || {};
+    const sizing = risk.position_sizing || {};
+    const drawdown = risk.drawdown_analysis || {};
+    const riskRward = risk.drawdown_analysis || {};
+
+    // Position sizing
+    document.getElementById('recommended-allocation').textContent =
+        (sizing.recommended_allocation_pct || 0) + '%';
+    document.getElementById('conviction-level').textContent =
+        sizing.conviction_level || '--';
+    document.getElementById('position-rationale').textContent =
+        sizing.mvrv_justification || '--';
+
+    // Drawdown
+    document.getElementById('typical-dd').textContent =
+        (drawdown.typical_drawdown_pct || 0) + '%';
+    document.getElementById('max-dd').textContent =
+        (drawdown.max_historical_drawdown_pct || 0) + '%';
+    document.getElementById('mental-prep').textContent =
+        drawdown.mental_preparation || '--';
+
+    // Risk/Reward
+    const rrRating = document.getElementById('rr-rating');
+    if (rrRating) {
+        const rr = risk.drawdown_analysis || {};
+        rrRating.textContent = rr.risk_reward_rating || '--';
+    }
+    document.getElementById('downside-risk').textContent =
+        drawdown.downside_risk || '--';
+    document.getElementById('upside-potential').textContent =
+        drawdown.upside_potential || '--';
+}
+
+// Trade Levels updates
+function updateTradeLevels(data) {
+    const levels = data.trade_levels || {};
+    const entries = levels.entry_zones || [];
+    const exits = levels.exit_targets || [];
+    const stops = levels.stop_loss_levels || {};
+
+    // Entry levels
+    const entryList = document.getElementById('entry-levels');
+    if (entryList) {
+        entryList.innerHTML = entries.map(e => `
+            <div class="level-item">
+                <span class="level-price">${e.price_range || '--'}</span>
+                <span class="level-action">${e.size || ''}</span>
+            </div>
+        `).join('') || '<div class="level-item">No entries at current levels</div>';
+    }
+
+    // Exit levels
+    const exitList = document.getElementById('exit-levels');
+    if (exitList) {
+        exitList.innerHTML = exits.map(e => `
+            <div class="level-item">
+                <span class="level-price">${formatCurrency(e.price || 0)}</span>
+                <span class="level-action">Sell ${e.sell_pct || 0}%</span>
+            </div>
+        `).join('') || '<div class="level-item">See trade plan</div>';
+    }
+
+    // Stop levels
+    const stopList = document.getElementById('stop-levels');
+    if (stopList && stops.soft_stop) {
+        stopList.innerHTML = `
+            <div class="level-item">
+                <span class="level-price">${formatCurrency(stops.soft_stop?.price || 0)}</span>
+                <span class="level-action">Soft Stop</span>
+            </div>
+            <div class="level-item">
+                <span class="level-price">${formatCurrency(stops.hard_stop?.price || 0)}</span>
+                <span class="level-action">Hard Stop</span>
+            </div>
+        `;
+    }
+
+    // Trade plan
+    const tradePlan = document.getElementById('trade-plan');
+    if (tradePlan) {
+        tradePlan.textContent = levels.trade_plan || 'Loading trade plan...';
+    }
+}
+
+// Watchlist updates
+function updateWatchlist(data) {
+    const watchlist = data.watchlist || {};
+    const daily = watchlist.daily_watchlist || [];
+    const levels = watchlist.key_levels_to_watch || {};
+    const redFlags = watchlist.red_flags || [];
+    const greenFlags = watchlist.green_flags || [];
+
+    // Daily watchlist
+    const dailyList = document.getElementById('daily-watchlist');
+    if (dailyList) {
+        dailyList.innerHTML = daily.map(item => `
+            <li><strong>${item.metric}:</strong> ${item.watch_for || item.current || ''}</li>
+        `).join('');
+    }
+
+    // Key price levels
+    const priceList = document.getElementById('key-price-levels');
+    if (priceList) {
+        priceList.innerHTML = `
+            <div class="price-level">
+                <span class="price-level-label">Support 1</span>
+                <span class="price-level-value support">${formatCurrency(levels.immediate_support || 0)}</span>
+            </div>
+            <div class="price-level">
+                <span class="price-level-label">Support 2</span>
+                <span class="price-level-value support">${formatCurrency(levels.strong_support || 0)}</span>
+            </div>
+            <div class="price-level">
+                <span class="price-level-label">Resistance 1</span>
+                <span class="price-level-value resistance">${formatCurrency(levels.immediate_resistance || 0)}</span>
+            </div>
+            <div class="price-level">
+                <span class="price-level-label">Resistance 2</span>
+                <span class="price-level-value resistance">${formatCurrency(levels.major_resistance || 0)}</span>
+            </div>
+        `;
+    }
+
+    // Red flags
+    const redList = document.getElementById('red-flags');
+    if (redList) {
+        redList.innerHTML = redFlags.slice(0, 5).map(f => `<li>${f}</li>`).join('');
+    }
+
+    // Green flags
+    const greenList = document.getElementById('green-flags');
+    if (greenList) {
+        greenList.innerHTML = greenFlags.slice(0, 5).map(f => `<li>${f}</li>`).join('');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 
 // Thesis updates
 function updateThesis(data) {

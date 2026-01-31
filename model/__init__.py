@@ -11,6 +11,14 @@ from .strategic_cycle_model import (
     get_default_market_data
 )
 
+from .enhanced_insights import (
+    CycleIntelligenceEngine,
+    ScenarioEngine,
+    RiskManagementEngine,
+    TradeLevelsEngine,
+    WatchlistEngine
+)
+
 __all__ = [
     'StrategicCycleModel',
     'MarketData',
@@ -21,5 +29,10 @@ __all__ = [
     'LiquidityRegime',
     'TopWarning',
     'AltSeason',
-    'get_default_market_data'
+    'get_default_market_data',
+    'CycleIntelligenceEngine',
+    'ScenarioEngine',
+    'RiskManagementEngine',
+    'TradeLevelsEngine',
+    'WatchlistEngine'
 ]

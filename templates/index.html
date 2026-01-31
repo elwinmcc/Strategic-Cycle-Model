@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bitcoin Strategic Cycle Model v7.0</title>
+    <title>Bitcoin Strategic Cycle Model v7.1</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,7 +15,7 @@
         <!-- Header -->
         <header class="header">
             <div class="header-left">
-                <h1>BTC Strategic Cycle Model <span class="version">v7.0</span></h1>
+                <h1>BTC Strategic Cycle Model <span class="version">v7.1</span></h1>
                 <p class="tagline">"The Liquidity Thesis" - Buy value, sell euphoria</p>
             </div>
             <div class="header-right">
@@ -284,6 +284,207 @@
             </section>
         </div>
 
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- ENHANCED INSIGHTS v7.1 -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+        <!-- Cycle Intelligence Section -->
+        <section class="insight-section" id="cycle-intelligence-section">
+            <div class="insight-header">
+                <h2>Cycle Intelligence</h2>
+                <span class="insight-subtitle">Where We Are & What It Means</span>
+            </div>
+            <div class="cycle-intel-content">
+                <div class="where-we-are-box" id="where-we-are">
+                    <div class="position-badge" id="cycle-position">--</div>
+                    <p class="position-explanation" id="position-explanation">Loading cycle analysis...</p>
+                </div>
+                <div class="cycle-intel-grid">
+                    <div class="intel-card">
+                        <h3>Phase Psychology</h3>
+                        <p id="phase-psychology">--</p>
+                    </div>
+                    <div class="intel-card">
+                        <h3>Smart Money Behavior</h3>
+                        <p id="smart-money-behavior">--</p>
+                    </div>
+                    <div class="intel-card">
+                        <h3>Retail Behavior</h3>
+                        <p id="retail-behavior">--</p>
+                    </div>
+                    <div class="intel-card action-card">
+                        <h3>What You Should Do</h3>
+                        <p id="what-to-do">--</p>
+                    </div>
+                </div>
+                <div class="cycle-metrics-row">
+                    <div class="cycle-metric">
+                        <span class="metric-label">Rally from Low</span>
+                        <span class="metric-value" id="rally-from-low">--%</span>
+                    </div>
+                    <div class="cycle-metric">
+                        <span class="metric-label">Drawdown from ATH</span>
+                        <span class="metric-value" id="dd-from-ath">--%</span>
+                    </div>
+                    <div class="cycle-metric">
+                        <span class="metric-label">Typical Phase Duration</span>
+                        <span class="metric-value" id="phase-duration">--</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Scenario Analysis Section -->
+        <section class="insight-section" id="scenario-section">
+            <div class="insight-header">
+                <h2>Scenario Analysis</h2>
+                <span class="insight-subtitle">12-Month Price Scenarios with Probabilities</span>
+            </div>
+            <div class="scenario-grid">
+                <div class="scenario-card bull" id="scenario-bull">
+                    <div class="scenario-header">
+                        <span class="scenario-name">Strong Bull</span>
+                        <span class="scenario-prob">--%</span>
+                    </div>
+                    <div class="scenario-target">$--</div>
+                    <div class="scenario-catalysts" id="bull-catalysts">
+                        <!-- Catalysts populated by JS -->
+                    </div>
+                </div>
+                <div class="scenario-card base" id="scenario-base">
+                    <div class="scenario-header">
+                        <span class="scenario-name">Base Case</span>
+                        <span class="scenario-prob">--%</span>
+                    </div>
+                    <div class="scenario-target">$--</div>
+                    <div class="scenario-catalysts" id="base-catalysts">
+                        <!-- Catalysts populated by JS -->
+                    </div>
+                </div>
+                <div class="scenario-card bear" id="scenario-bear">
+                    <div class="scenario-header">
+                        <span class="scenario-name">Bear Case</span>
+                        <span class="scenario-prob">--%</span>
+                    </div>
+                    <div class="scenario-target">$--</div>
+                    <div class="scenario-catalysts" id="bear-catalysts">
+                        <!-- Catalysts populated by JS -->
+                    </div>
+                </div>
+            </div>
+            <div class="expected-value-box">
+                <span class="ev-label">Probability-Weighted Expected Value (12M):</span>
+                <span class="ev-value" id="expected-value">$--</span>
+                <span class="ev-return" id="expected-return">(--%)</span>
+            </div>
+        </section>
+
+        <!-- Risk Management Section -->
+        <section class="insight-section" id="risk-section">
+            <div class="insight-header">
+                <h2>Risk Management</h2>
+                <span class="insight-subtitle">Position Sizing & Drawdown Analysis</span>
+            </div>
+            <div class="risk-grid">
+                <div class="risk-card position-sizing">
+                    <h3>Recommended Position</h3>
+                    <div class="position-pct" id="recommended-allocation">--%</div>
+                    <div class="conviction-badge" id="conviction-level">--</div>
+                    <p class="position-rationale" id="position-rationale">--</p>
+                </div>
+                <div class="risk-card drawdown-analysis">
+                    <h3>Drawdown Risk</h3>
+                    <div class="drawdown-metrics">
+                        <div class="dd-metric">
+                            <span class="dd-label">Typical Drawdown</span>
+                            <span class="dd-value" id="typical-dd">--%</span>
+                        </div>
+                        <div class="dd-metric">
+                            <span class="dd-label">Max Historical</span>
+                            <span class="dd-value" id="max-dd">--%</span>
+                        </div>
+                    </div>
+                    <p class="mental-prep" id="mental-prep">--</p>
+                </div>
+                <div class="risk-card risk-reward">
+                    <h3>Risk/Reward</h3>
+                    <div class="rr-rating" id="rr-rating">--</div>
+                    <div class="rr-details">
+                        <div><span>Downside Risk:</span> <span id="downside-risk">--</span></div>
+                        <div><span>Upside Potential:</span> <span id="upside-potential">--</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Trade Levels Section -->
+        <section class="insight-section" id="trade-levels-section">
+            <div class="insight-header">
+                <h2>Trade Levels</h2>
+                <span class="insight-subtitle">Actionable Entries, Exits & Stops</span>
+            </div>
+            <div class="trade-levels-grid">
+                <div class="levels-card entries">
+                    <h3>Entry Zones</h3>
+                    <div class="levels-list" id="entry-levels">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="levels-card exits">
+                    <h3>Exit Targets</h3>
+                    <div class="levels-list" id="exit-levels">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="levels-card stops">
+                    <h3>Stop Loss</h3>
+                    <div class="levels-list" id="stop-levels">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+            <div class="trade-plan-box">
+                <h3>Trade Plan Summary</h3>
+                <pre class="trade-plan" id="trade-plan">Loading trade plan...</pre>
+            </div>
+        </section>
+
+        <!-- Watchlist Section -->
+        <section class="insight-section" id="watchlist-section">
+            <div class="insight-header">
+                <h2>Trader Watchlist</h2>
+                <span class="insight-subtitle">Key Metrics & Levels to Monitor</span>
+            </div>
+            <div class="watchlist-grid">
+                <div class="watchlist-card">
+                    <h3>Daily Checklist</h3>
+                    <ul class="watchlist-items" id="daily-watchlist">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+                <div class="watchlist-card">
+                    <h3>Key Price Levels</h3>
+                    <div class="price-levels" id="key-price-levels">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="watchlist-card flags">
+                    <h3>Red Flags (Warning Signs)</h3>
+                    <ul class="flag-list red" id="red-flags">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+                <div class="watchlist-card flags">
+                    <h3>Green Flags (Bullish Signs)</h3>
+                    <ul class="flag-list green" id="green-flags">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+
         <!-- Thesis Section -->
         <section class="thesis-section">
             <div class="thesis-header">
@@ -340,7 +541,7 @@
         <!-- Footer -->
         <footer class="footer">
             <div class="footer-left">
-                <span>Bitcoin Strategic Cycle Model v7.0</span>
+                <span>Bitcoin Strategic Cycle Model v7.1</span>
                 <span class="separator">|</span>
                 <span id="last-updated">Last updated: --</span>
             </div>

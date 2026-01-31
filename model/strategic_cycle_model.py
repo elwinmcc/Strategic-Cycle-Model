@@ -1268,7 +1268,7 @@ Thesis: BTC is a liquidity asset. Buy value, sell euphoria. Current MVRV {mvrv:.
 # =============================================================================
 
 class StrategicCycleModel:
-    """Bitcoin Strategic Cycle Model v7.0 - Unified Framework"""
+    """Bitcoin Strategic Cycle Model v7.1 - Unified Framework with Enhanced Insights"""
 
     def __init__(self):
         self.liquidity = LiquidityEngine()
@@ -1280,6 +1280,20 @@ class StrategicCycleModel:
         self.backtest = BacktestEngine()
         self.signal_gen = SignalGenerator()
         self.thesis_gen = ThesisGenerator()
+
+        # v7.1 Enhanced Insights
+        from .enhanced_insights import (
+            CycleIntelligenceEngine,
+            ScenarioEngine,
+            RiskManagementEngine,
+            TradeLevelsEngine,
+            WatchlistEngine
+        )
+        self.cycle_intelligence = CycleIntelligenceEngine()
+        self.scenarios = ScenarioEngine()
+        self.risk_mgmt = RiskManagementEngine()
+        self.trade_levels = TradeLevelsEngine()
+        self.watchlist = WatchlistEngine()
 
     def analyze(self, d: MarketData) -> Dict:
         """Run complete analysis"""
@@ -1309,10 +1323,49 @@ class StrategicCycleModel:
         # Layer 8: Signal
         signal = self.signal_gen.generate(phase_result, liq, trends, alts, forecast)
 
+        # v7.1 Enhanced Insights
+        cycle_intel = self.cycle_intelligence.analyze(
+            phase=phase_result['phase'],
+            mvrv=d.mvrv,
+            fear_greed=d.fear_greed,
+            cycle_progress=phase_result['cycle_progress'],
+            price=d.btc_price,
+            ath=d.btc_ath,
+            cycle_low=d.btc_cycle_low
+        )
+
+        scenario_analysis = self.scenarios.analyze(
+            price=d.btc_price,
+            mvrv=d.mvrv,
+            phase=phase_result['phase'],
+            liquidity_score=liq['score'],
+            trend_alignment=trends['alignment']
+        )
+
+        risk_analysis = self.risk_mgmt.analyze(
+            price=d.btc_price,
+            mvrv=d.mvrv,
+            phase=phase_result['phase']
+        )
+
+        trade_levels_analysis = self.trade_levels.analyze(
+            price=d.btc_price,
+            mvrv=d.mvrv,
+            phase=phase_result['phase']
+        )
+
+        watchlist_items = self.watchlist.generate(
+            price=d.btc_price,
+            mvrv=d.mvrv,
+            phase=phase_result['phase'],
+            liquidity=liq,
+            business_cycle=biz
+        )
+
         # Compile result
         result = {
             'meta': {
-                'model': 'Strategic Cycle Model v7.0',
+                'model': 'Strategic Cycle Model v7.1',
                 'date': d.date or str(date.today()),
                 'btc_price': d.btc_price
             },
@@ -1323,7 +1376,13 @@ class StrategicCycleModel:
             'btc_trends': trends,
             'altcoins': alts,
             'forecast': forecast,
-            'backtest': backtest
+            'backtest': backtest,
+            # v7.1 Enhanced
+            'cycle_intelligence': cycle_intel,
+            'scenarios': scenario_analysis,
+            'risk_management': risk_analysis,
+            'trade_levels': trade_levels_analysis,
+            'watchlist': watchlist_items
         }
 
         # Generate thesis
