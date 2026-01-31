@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitcoin Strategic Cycle Model v7.0</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1>BTC Strategic Cycle Model <span class="version">v7.0</span></h1>
+                <p class="tagline">"The Liquidity Thesis" - Buy value, sell euphoria</p>
+            </div>
+            <div class="header-right">
+                <div class="price-display">
+                    <span class="label">BTC</span>
+                    <span class="price" id="btc-price">$--,---</span>
+                    <span class="change" id="btc-change">--%</span>
+                </div>
+                <button class="btn-refresh" onclick="refreshData()">
+                    <span class="refresh-icon">&#8635;</span> Refresh
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Signal Card -->
+        <section class="signal-card" id="signal-card">
+            <div class="signal-header">
+                <span class="signal-label">SIGNAL</span>
+                <span class="signal-value" id="signal-value">LOADING...</span>
+            </div>
+            <div class="signal-details">
+                <div class="allocation">
+                    <span class="label">Allocation</span>
+                    <span class="value" id="allocation-value">--%</span>
+                </div>
+                <div class="confidence">
+                    <span class="label">Confidence</span>
+                    <span class="value" id="confidence-value">--</span>
+                </div>
+            </div>
+            <div class="signal-rationale" id="signal-rationale">
+                Loading analysis...
+            </div>
+        </section>
+
+        <!-- Main Grid -->
+        <div class="dashboard-grid">
+            <!-- Valuation Card -->
+            <section class="card valuation-card">
+                <h2>Valuation</h2>
+                <div class="metric-row">
+                    <div class="metric">
+                        <span class="metric-label">MVRV</span>
+                        <span class="metric-value" id="mvrv-value">--</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Zone</span>
+                        <span class="metric-value zone-badge" id="value-zone">--</span>
+                    </div>
+                </div>
+                <div class="mvrv-gauge" id="mvrv-gauge">
+                    <div class="gauge-fill" id="mvrv-fill"></div>
+                    <div class="gauge-labels">
+                        <span>Deep Value</span>
+                        <span>Value</span>
+                        <span>Fair</span>
+                        <span>Extended</span>
+                        <span>Euphoria</span>
+                    </div>
+                </div>
+                <div class="metric-row">
+                    <div class="metric small">
+                        <span class="metric-label">Power Law Fair</span>
+                        <span class="metric-value" id="pl-fair">$--</span>
+                    </div>
+                    <div class="metric small">
+                        <span class="metric-label">Deviation</span>
+                        <span class="metric-value" id="pl-dev">--%</span>
+                    </div>
+                </div>
+                <div class="buy-zone-indicator" id="buy-zone-indicator">
+                    <span class="indicator-dot"></span>
+                    <span class="indicator-text">Loading...</span>
+                </div>
+            </section>
+
+            <!-- Cycle Phase Card -->
+            <section class="card phase-card">
+                <h2>Cycle Phase</h2>
+                <div class="phase-display">
+                    <span class="phase-name" id="phase-name">--</span>
+                    <span class="phase-confidence" id="phase-confidence">--% conf</span>
+                </div>
+                <div class="cycle-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="cycle-progress-fill"></div>
+                    </div>
+                    <span class="progress-text" id="cycle-progress-text">--% complete</span>
+                </div>
+                <div class="phase-transition">
+                    <span class="label">Next Phase</span>
+                    <span class="value" id="next-phase">--</span>
+                    <span class="probability" id="transition-prob">--% prob</span>
+                </div>
+                <div class="phase-timeline" id="phase-timeline">
+                    Timeline: --
+                </div>
+            </section>
+
+            <!-- Liquidity Card -->
+            <section class="card liquidity-card">
+                <h2>Liquidity</h2>
+                <div class="regime-badge" id="liq-regime">--</div>
+                <div class="metric-grid">
+                    <div class="metric">
+                        <span class="metric-label">Net Liquidity</span>
+                        <span class="metric-value" id="net-liq">$--T</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">RRP Depleted</span>
+                        <span class="metric-value" id="rrp-depleted">--%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Fed BS (90d)</span>
+                        <span class="metric-value" id="fed-90d">--%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">M2 YoY</span>
+                        <span class="metric-value" id="m2-yoy">--%</span>
+                    </div>
+                </div>
+                <div class="liq-score">
+                    <span class="label">Liquidity Score</span>
+                    <div class="score-bar">
+                        <div class="score-fill" id="liq-score-fill"></div>
+                    </div>
+                    <span class="score-value" id="liq-score">--/100</span>
+                </div>
+            </section>
+
+            <!-- Top Detection Card -->
+            <section class="card top-card">
+                <h2>Top Detection</h2>
+                <div class="warning-level" id="warning-level">
+                    <span class="warning-badge">--</span>
+                    <span class="warning-score" id="top-score">--/100</span>
+                </div>
+                <div class="top-indicators" id="top-indicators">
+                    <!-- Indicators will be populated by JS -->
+                </div>
+            </section>
+
+            <!-- Business Cycle Card -->
+            <section class="card business-card">
+                <h2>Business Cycle</h2>
+                <div class="stage-badge" id="biz-stage">--</div>
+                <div class="metric-grid">
+                    <div class="metric">
+                        <span class="metric-label">ISM Mfg</span>
+                        <span class="metric-value" id="ism-mfg">--</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">ISM Svc</span>
+                        <span class="metric-value" id="ism-svc">--</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">ISM Preview</span>
+                        <span class="metric-value" id="ism-preview">--</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Regional Fed</span>
+                        <span class="metric-value" id="regional-signal">--</span>
+                    </div>
+                </div>
+                <div class="early-warning" id="early-warning">
+                    <!-- Early warning indicator -->
+                </div>
+            </section>
+
+            <!-- BTC Trends Card -->
+            <section class="card trends-card">
+                <h2>BTC Trends</h2>
+                <div class="alignment-badge" id="trend-alignment">--</div>
+                <div class="timeframes">
+                    <div class="timeframe" id="tf-stf">
+                        <span class="tf-label">STF (Days-2W)</span>
+                        <span class="tf-trend">--</span>
+                        <span class="tf-momentum">--%</span>
+                    </div>
+                    <div class="timeframe" id="tf-mtf">
+                        <span class="tf-label">MTF (2W-3M)</span>
+                        <span class="tf-trend">--</span>
+                        <span class="tf-momentum">--%</span>
+                    </div>
+                    <div class="timeframe" id="tf-ltf">
+                        <span class="tf-label">LTF (3M-1Y+)</span>
+                        <span class="tf-trend">--</span>
+                        <span class="tf-momentum">--%</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Alt Rotation Card -->
+            <section class="card alts-card">
+                <h2>Alt Rotation</h2>
+                <div class="alt-phase-badge" id="alt-phase">--</div>
+                <div class="metric-grid">
+                    <div class="metric">
+                        <span class="metric-label">ETH/BTC</span>
+                        <span class="metric-value" id="eth-btc">--</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">BTC Dom</span>
+                        <span class="metric-value" id="btc-dom">--%</span>
+                    </div>
+                </div>
+                <div class="allocation-suggestion">
+                    <h3>Suggested Allocation</h3>
+                    <div class="alloc-bars" id="alloc-bars">
+                        <div class="alloc-item">
+                            <span class="alloc-label">BTC</span>
+                            <div class="alloc-bar"><div class="alloc-fill btc" id="alloc-btc"></div></div>
+                            <span class="alloc-pct" id="alloc-btc-pct">--%</span>
+                        </div>
+                        <div class="alloc-item">
+                            <span class="alloc-label">ETH</span>
+                            <div class="alloc-bar"><div class="alloc-fill eth" id="alloc-eth"></div></div>
+                            <span class="alloc-pct" id="alloc-eth-pct">--%</span>
+                        </div>
+                        <div class="alloc-item">
+                            <span class="alloc-label">ALTS</span>
+                            <div class="alloc-bar"><div class="alloc-fill alts" id="alloc-alts"></div></div>
+                            <span class="alloc-pct" id="alloc-alts-pct">--%</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Monte Carlo Card -->
+            <section class="card monte-carlo-card">
+                <h2>Monte Carlo Forecast</h2>
+                <div class="mc-horizons">
+                    <div class="mc-horizon" id="mc-30d">
+                        <span class="horizon-label">30D</span>
+                        <span class="horizon-median">$--</span>
+                        <span class="horizon-range">-- to --</span>
+                        <span class="horizon-return">--%</span>
+                    </div>
+                    <div class="mc-horizon" id="mc-90d">
+                        <span class="horizon-label">90D</span>
+                        <span class="horizon-median">$--</span>
+                        <span class="horizon-range">-- to --</span>
+                        <span class="horizon-return">--%</span>
+                    </div>
+                    <div class="mc-horizon highlight" id="mc-365d">
+                        <span class="horizon-label">12M</span>
+                        <span class="horizon-median">$--</span>
+                        <span class="horizon-range">-- to --</span>
+                        <span class="horizon-return">--%</span>
+                    </div>
+                </div>
+                <div class="probability-grid">
+                    <div class="prob-item">
+                        <span class="prob-label">P(&gt;$100K)</span>
+                        <span class="prob-value" id="prob-100k">--%</span>
+                    </div>
+                    <div class="prob-item">
+                        <span class="prob-label">P(&gt;$150K)</span>
+                        <span class="prob-value" id="prob-150k">--%</span>
+                    </div>
+                    <div class="prob-item">
+                        <span class="prob-label">P(&lt;$75K)</span>
+                        <span class="prob-value" id="prob-75k">--%</span>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Thesis Section -->
+        <section class="thesis-section">
+            <div class="thesis-header">
+                <h2>Thesis</h2>
+                <button class="btn-copy" onclick="copyThesis()">Copy for Discord</button>
+            </div>
+            <pre class="thesis-content" id="thesis-content">Loading thesis...</pre>
+        </section>
+
+        <!-- Data Override Section -->
+        <section class="overrides-section collapsed" id="overrides-section">
+            <div class="overrides-header" onclick="toggleOverrides()">
+                <h2>Manual Data Overrides</h2>
+                <span class="toggle-icon">&#9660;</span>
+            </div>
+            <div class="overrides-content" id="overrides-content">
+                <p class="overrides-note">
+                    Some data (MVRV, NUPL, Fed BS, ISM, etc.) cannot be fetched from free APIs.
+                    Enter manual values below to override defaults.
+                </p>
+                <div class="override-grid">
+                    <div class="override-item">
+                        <label>MVRV</label>
+                        <input type="number" step="0.01" id="override-mvrv" placeholder="1.85">
+                    </div>
+                    <div class="override-item">
+                        <label>NUPL</label>
+                        <input type="number" step="0.01" id="override-nupl" placeholder="0.52">
+                    </div>
+                    <div class="override-item">
+                        <label>Fed BS ($T)</label>
+                        <input type="number" step="0.01" id="override-fed-bs" placeholder="6.57">
+                    </div>
+                    <div class="override-item">
+                        <label>RRP ($T)</label>
+                        <input type="number" step="0.01" id="override-rrp" placeholder="0.25">
+                    </div>
+                    <div class="override-item">
+                        <label>ISM Mfg</label>
+                        <input type="number" step="0.1" id="override-ism-mfg" placeholder="49.2">
+                    </div>
+                    <div class="override-item">
+                        <label>Fear & Greed</label>
+                        <input type="number" id="override-fg" placeholder="62">
+                    </div>
+                </div>
+                <div class="override-actions">
+                    <button class="btn-apply" onclick="applyOverrides()">Apply Overrides</button>
+                    <button class="btn-clear" onclick="clearOverrides()">Clear All</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-left">
+                <span>Bitcoin Strategic Cycle Model v7.0</span>
+                <span class="separator">|</span>
+                <span id="last-updated">Last updated: --</span>
+            </div>
+            <div class="footer-right">
+                <span class="data-source" id="data-source">Data: --</span>
+            </div>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
