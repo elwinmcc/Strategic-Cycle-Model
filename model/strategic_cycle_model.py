@@ -612,6 +612,8 @@ class AltcoinEngine:
             'others_btc': others,
             'btc_dominance': d.btc_dominance,
             'btc_dom_change_30d': round(dom_change, 2) if dom_change else 0,
+            'others_vs_btc': others.get('mom_30d', 0),  # 30d performance vs BTC
+            'eth_vs_btc': eth_btc.get('mom_30d', 0),    # ETH 30d performance vs BTC
             'phase': phase.value,
             'rotation_score': score,
             'allocation_suggestion': self._suggest_allocation(phase, score)
@@ -1367,7 +1369,9 @@ class StrategicCycleModel:
             'meta': {
                 'model': 'Strategic Cycle Model v7.1',
                 'date': d.date or str(date.today()),
-                'btc_price': d.btc_price
+                'btc_price': d.btc_price,
+                'eth_price': d.eth_price,
+                'btc_ath': d.btc_ath
             },
             'signal': signal,
             'phase': phase_result,
@@ -1398,8 +1402,8 @@ class StrategicCycleModel:
 def get_default_market_data() -> MarketData:
     """Return default/demo market data"""
     return MarketData(
-        btc_price=104500,
-        btc_ath=108000,
+        btc_price=78881,
+        btc_ath=109000,
         btc_cycle_low=15500,
         btc_1d=103000,
         btc_7d=100500,

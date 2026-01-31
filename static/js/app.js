@@ -303,16 +303,32 @@ function updateAltRotation(data) {
     const alts = data.altcoins || {};
     const ethBtc = alts.eth_btc || {};
     const allocation = alts.allocation_suggestion || {};
+    const meta = data.meta || {};
 
     // Phase
     document.getElementById('alt-phase').textContent =
         (alts.phase || '--').replace('_', ' ');
+
+    // ETH Price
+    const ethPriceEl = document.getElementById('eth-price');
+    if (ethPriceEl) {
+        const ethPrice = meta.eth_price || 0;
+        ethPriceEl.textContent = formatCurrency(ethPrice);
+    }
 
     // Metrics
     document.getElementById('eth-btc').textContent =
         (ethBtc.value || 0).toFixed(4);
     document.getElementById('btc-dom').textContent =
         (alts.btc_dominance || 0).toFixed(1) + '%';
+
+    // OTHERS vs BTC performance
+    const othersBtcEl = document.getElementById('others-btc');
+    if (othersBtcEl) {
+        const othersPerf = alts.others_vs_btc || 0;
+        othersBtcEl.textContent = formatPercent(othersPerf);
+        othersBtcEl.className = 'metric-value ' + (othersPerf >= 0 ? 'positive' : 'negative');
+    }
 
     // Allocation bars
     const btcAlloc = allocation.BTC || 50;
