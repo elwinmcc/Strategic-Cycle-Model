@@ -209,20 +209,51 @@ class DataService:
             return cache[cache_key]
 
         try:
-            # Try to fetch from CoinGlass (free tier available)
+            # Try to fetch from Bitbo.io (charts.bitbo.io/mvrv/)
             try:
-                url = "https://open-api-v3.coinglass.com/api/index/bitcoin-profitable-days"
-                response = await client.get(url, timeout=5.0)
+                url = "https://charts.bitbo.io/mvrv/"
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+                response = await client.get(url, headers=headers, timeout=10.0)
                 if response.status_code == 200:
-                    data = response.json()
-                    # CoinGlass may have MVRV in their data
-                    if 'data' in data and 'mvrv' in data.get('data', {}):
-                        mvrv = data['data']['mvrv']
-                        result = {'mvrv': mvrv, 'source': 'coinglass'}
-                        cache[cache_key] = result
-                        return result
+                    html = response.text
+                    # Look for MVRV value in the page - typically in a data attribute or script
+                    import re
+
+                    # Try to find MVRV value patterns in the HTML
+                    # Pattern 1: Look for "mvrv" followed by a number
+                    patterns = [
+                        r'"mvrv"\s*:\s*([\d.]+)',
+                        r"'mvrv'\s*:\s*([\d.]+)",
+                        r'mvrv["\']?\s*[:=]\s*([\d.]+)',
+                        r'data-value["\']?\s*=\s*["\']?([\d.]+)',
+                        r'current["\']?\s*:\s*([\d.]+)',
+                    ]
+
+                    for pattern in patterns:
+                        match = re.search(pattern, html, re.IGNORECASE)
+                        if match:
+                            mvrv = float(match.group(1))
+                            if 0.3 < mvrv < 10:  # Sanity check for valid MVRV range
+                                result = {'mvrv': round(mvrv, 2), 'source': 'bitbo'}
+                                cache[cache_key] = result
+                                logger.info(f"Fetched MVRV from Bitbo: {mvrv:.2f}")
+                                return result
+
+                    # Try to find in script tags with JSON data
+                    json_pattern = r'\{[^{}]*"value"\s*:\s*([\d.]+)[^{}]*"mvrv"[^{}]*\}'
+                    match = re.search(json_pattern, html, re.IGNORECASE)
+                    if match:
+                        mvrv = float(match.group(1))
+                        if 0.3 < mvrv < 10:
+                            result = {'mvrv': round(mvrv, 2), 'source': 'bitbo'}
+                            cache[cache_key] = result
+                            logger.info(f"Fetched MVRV from Bitbo: {mvrv:.2f}")
+                            return result
+
             except Exception as e:
-                logger.debug(f"CoinGlass API not available: {e}")
+                logger.debug(f"Bitbo.io fetch error: {e}")
 
             # Try blockchain.info for market cap and calculate approximation
             try:
@@ -234,11 +265,10 @@ class DataService:
                     market_cap = float(mc_response.text)
 
                     # Realized cap approximation based on historical patterns
-                    # Current cycle bottom was ~$15,500 in Nov 2022
-                    # Realized cap at that time was approximately $400B
-                    # Realized cap moves slowly as old coins move
-                    # We estimate current realized cap around $450-500B range
-                    estimated_realized_cap = 480_000_000_000  # ~$480B estimate
+                    # Current realized cap is approximately $850-900B (Jan 2025)
+                    # This is based on on-chain data showing avg cost basis around $43K
+                    # with ~19.8M BTC in circulation = ~$850B realized cap
+                    estimated_realized_cap = 870_000_000_000  # ~$870B estimate for 2025
 
                     mvrv = market_cap / estimated_realized_cap
                     result = {'mvrv': round(mvrv, 2), 'source': 'calculated', 'market_cap': market_cap}
@@ -249,8 +279,6 @@ class DataService:
                 logger.debug(f"Blockchain.info API error: {e}")
 
             # Final fallback: estimate from price relative to 200WMA
-            # Historical MVRV zones correlate with price/200WMA ratio
-            # MVRV 1.0 ~ price at ~1.5x 200WMA, MVRV 2.0 ~ 2.5x 200WMA, etc.
             result = {'mvrv': None, 'source': 'unavailable'}
             cache[cache_key] = result
             return result
