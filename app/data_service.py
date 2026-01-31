@@ -209,9 +209,9 @@ class DataService:
             return cache[cache_key]
 
         try:
-            # Try to fetch from Bitbo.io (charts.bitbo.io/mvrv/)
+            # Try to fetch from Bitbo.io MVRV Z-Score page
             try:
-                url = "https://charts.bitbo.io/mvrv/"
+                url = "https://charts.bitbo.io/mvrv-z-score/"
                 headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 }
@@ -222,35 +222,52 @@ class DataService:
                     import re
 
                     # Try to find MVRV value patterns in the HTML
-                    # Pattern 1: Look for "mvrv" followed by a number
+                    # The page may show both MVRV Z-Score and raw MVRV
                     patterns = [
+                        # MVRV ratio patterns
                         r'"mvrv"\s*:\s*([\d.]+)',
                         r"'mvrv'\s*:\s*([\d.]+)",
                         r'mvrv["\']?\s*[:=]\s*([\d.]+)',
+                        r'MVRV\s*[:=]?\s*([\d.]+)',
+                        # Z-Score patterns (we'll convert to approximate MVRV)
+                        r'"z[_-]?score"\s*:\s*([-\d.]+)',
+                        r'z[_-]?score["\']?\s*[:=]\s*([-\d.]+)',
+                        # Current value patterns
+                        r'"current"\s*:\s*([\d.]+)',
+                        r'"value"\s*:\s*([\d.]+)',
                         r'data-value["\']?\s*=\s*["\']?([\d.]+)',
-                        r'current["\']?\s*:\s*([\d.]+)',
                     ]
 
                     for pattern in patterns:
                         match = re.search(pattern, html, re.IGNORECASE)
                         if match:
-                            mvrv = float(match.group(1))
+                            value = float(match.group(1))
+                            # Check if it's a Z-Score (typically -1 to 10 range)
+                            if 'z' in pattern.lower() or 'score' in pattern.lower():
+                                # Z-Score to MVRV approximation: MVRV ≈ 1 + (z_score * 0.5)
+                                mvrv = 1 + (value * 0.5)
+                            else:
+                                mvrv = value
+
                             if 0.3 < mvrv < 10:  # Sanity check for valid MVRV range
-                                result = {'mvrv': round(mvrv, 2), 'source': 'bitbo'}
+                                result = {'mvrv': round(mvrv, 2), 'source': 'bitbo', 'raw_value': value}
                                 cache[cache_key] = result
                                 logger.info(f"Fetched MVRV from Bitbo: {mvrv:.2f}")
                                 return result
 
                     # Try to find in script tags with JSON data
-                    json_pattern = r'\{[^{}]*"value"\s*:\s*([\d.]+)[^{}]*"mvrv"[^{}]*\}'
-                    match = re.search(json_pattern, html, re.IGNORECASE)
-                    if match:
-                        mvrv = float(match.group(1))
-                        if 0.3 < mvrv < 10:
-                            result = {'mvrv': round(mvrv, 2), 'source': 'bitbo'}
-                            cache[cache_key] = result
-                            logger.info(f"Fetched MVRV from Bitbo: {mvrv:.2f}")
-                            return result
+                    json_pattern = r'\{[^{}]*"value"\s*:\s*([\d.]+)[^{}]*\}'
+                    matches = re.findall(json_pattern, html, re.IGNORECASE)
+                    for val_str in matches:
+                        try:
+                            mvrv = float(val_str)
+                            if 0.3 < mvrv < 10:
+                                result = {'mvrv': round(mvrv, 2), 'source': 'bitbo'}
+                                cache[cache_key] = result
+                                logger.info(f"Fetched MVRV from Bitbo: {mvrv:.2f}")
+                                return result
+                        except:
+                            continue
 
             except Exception as e:
                 logger.debug(f"Bitbo.io fetch error: {e}")
@@ -264,11 +281,11 @@ class DataService:
                 if mc_response.status_code == 200:
                     market_cap = float(mc_response.text)
 
-                    # Realized cap approximation based on historical patterns
-                    # Current realized cap is approximately $850-900B (Jan 2025)
-                    # This is based on on-chain data showing avg cost basis around $43K
-                    # with ~19.8M BTC in circulation = ~$850B realized cap
-                    estimated_realized_cap = 870_000_000_000  # ~$870B estimate for 2025
+                    # Realized cap approximation based on on-chain data
+                    # Current realized cap is approximately $650-700B (Jan 2025)
+                    # Average cost basis is around $35K with ~19.8M BTC
+                    # At $77K price, MVRV should be around 2.0-2.2
+                    estimated_realized_cap = 680_000_000_000  # ~$680B estimate
 
                     mvrv = market_cap / estimated_realized_cap
                     result = {'mvrv': round(mvrv, 2), 'source': 'calculated', 'market_cap': market_cap}
@@ -311,7 +328,7 @@ class DataService:
         onchain = live_data.get('onchain', {})
 
         # Calculate historical prices from percentage changes
-        current_price = btc.get('price', 104500)
+        current_price = btc.get('price', 77000)
 
         def calc_historical(current, pct_change):
             if pct_change and pct_change != 0:
@@ -351,7 +368,8 @@ class DataService:
             data_dict.update(manual_overrides)
 
         # Calculate 200WMA estimate for MVRV fallback calculation
-        btc_200w_ma_est = current_price * 0.44  # ~$46K at $105K price
+        # 200WMA is approximately $43K currently (Jan 2025)
+        btc_200w_ma_est = 43000
 
         # Get MVRV from on-chain data or calculate it
         fetched_mvrv = onchain.get('mvrv')
