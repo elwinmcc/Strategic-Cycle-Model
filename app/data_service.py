@@ -242,10 +242,15 @@ class DataService:
                         match = re.search(pattern, html, re.IGNORECASE)
                         if match:
                             value = float(match.group(1))
-                            # Check if it's a Z-Score (typically -1 to 10 range)
+                            # Check if it's a Z-Score (typically -1 to 10 range, often < 3)
                             if 'z' in pattern.lower() or 'score' in pattern.lower():
-                                # Z-Score to MVRV approximation: MVRV ≈ 1 + (z_score * 0.5)
-                                mvrv = 1 + (value * 0.5)
+                                # Z-Score to MVRV conversion:
+                                # Z-Score 0 ≈ MVRV 1.0 (at realized value)
+                                # Z-Score 0.73 ≈ MVRV ~1.6
+                                # Z-Score 2 ≈ MVRV ~2.5
+                                # Z-Score 4 ≈ MVRV ~4.0
+                                # Formula: MVRV ≈ 1.0 + (z_score * 0.8)
+                                mvrv = 1.0 + (value * 0.8)
                             else:
                                 mvrv = value
 
@@ -282,10 +287,10 @@ class DataService:
                     market_cap = float(mc_response.text)
 
                     # Realized cap approximation based on on-chain data
-                    # Current realized cap is approximately $650-700B (Jan 2025)
-                    # Average cost basis is around $35K with ~19.8M BTC
-                    # At $77K price, MVRV should be around 2.0-2.2
-                    estimated_realized_cap = 680_000_000_000  # ~$680B estimate
+                    # Current realized cap is approximately $900B-$1T (Jan 2025)
+                    # With Z-Score 0.73 at ~$79K and MVRV ~1.58:
+                    # Market cap ~$1.56T / MVRV 1.58 = Realized cap ~$987B
+                    estimated_realized_cap = 950_000_000_000  # ~$950B estimate
 
                     mvrv = market_cap / estimated_realized_cap
                     result = {'mvrv': round(mvrv, 2), 'source': 'calculated', 'market_cap': market_cap}
@@ -328,7 +333,7 @@ class DataService:
         onchain = live_data.get('onchain', {})
 
         # Calculate historical prices from percentage changes
-        current_price = btc.get('price', 77000)
+        current_price = btc.get('price', 78881)
 
         def calc_historical(current, pct_change):
             if pct_change and pct_change != 0:
