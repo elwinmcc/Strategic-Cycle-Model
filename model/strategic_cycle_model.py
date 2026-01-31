@@ -1297,6 +1297,155 @@ class StrategicCycleModel:
         self.trade_levels = TradeLevelsEngine()
         self.watchlist = WatchlistEngine()
 
+    def _calculate_composite_score(self, mvrv: float, liquidity: Dict,
+                                    trends: Dict, business_cycle: Dict,
+                                    phase_result: Dict, fear_greed: int) -> Dict:
+        """
+        Calculate Overall Composite Score combining all model layers.
+
+        Weights:
+        - Valuation (MVRV)      : 25% - Primary driver
+        - Liquidity             : 20% - Macro backdrop
+        - Trend/Momentum        : 20% - Price action
+        - Business Cycle        : 15% - Economic context
+        - Phase Confidence      : 10% - Model conviction
+        - Sentiment (inverse)   : 10% - Contrarian signal
+
+        Returns score 0-100 where:
+        - 0-20: Strong Sell / Distribution
+        - 20-40: Reduce / Caution
+        - 40-60: Neutral / Hold
+        - 60-80: Accumulate
+        - 80-100: Strong Buy / Max Accumulation
+        """
+
+        # 1. Valuation Score (25%) - MVRV based
+        # MVRV < 1.0 = 100 (deep value)
+        # MVRV 1.0-1.5 = 85
+        # MVRV 1.5-2.0 = 70
+        # MVRV 2.0-2.5 = 55
+        # MVRV 2.5-3.5 = 40
+        # MVRV 3.5-4.5 = 25
+        # MVRV > 4.5 = 10 (euphoria)
+        if mvrv < 0.5:
+            valuation_score = 100
+        elif mvrv < 1.0:
+            valuation_score = 95
+        elif mvrv < 1.5:
+            valuation_score = 80
+        elif mvrv < 2.0:
+            valuation_score = 65
+        elif mvrv < 2.5:
+            valuation_score = 50
+        elif mvrv < 3.0:
+            valuation_score = 40
+        elif mvrv < 3.5:
+            valuation_score = 30
+        elif mvrv < 4.5:
+            valuation_score = 20
+        else:
+            valuation_score = 10
+
+        # 2. Liquidity Score (20%) - Already 0-100
+        liquidity_score = liquidity.get('score', 50)
+
+        # 3. Trend Score (20%) - Alignment based
+        alignment_score = trends.get('alignment_score', 50)
+        composite_mom = trends.get('composite_momentum', 0)
+        # Boost for strong momentum
+        trend_score = alignment_score + min(20, max(-20, composite_mom * 2))
+        trend_score = max(0, min(100, trend_score))
+
+        # 4. Business Cycle Score (15%) - Already 0-100
+        biz_score = business_cycle.get('score', 50)
+
+        # 5. Phase Confidence (10%)
+        phase_confidence = phase_result.get('phase_confidence', 50)
+        phase = phase_result.get('phase', '')
+        # Boost if in bullish phase with high confidence
+        if phase in ['ACCUMULATION', 'EARLY_MARKUP', 'MID_MARKUP']:
+            phase_score = phase_confidence
+        elif phase in ['LATE_MARKUP', 'DISTRIBUTION']:
+            phase_score = 100 - phase_confidence  # Invert for late cycle
+        else:
+            phase_score = 50 - (phase_confidence * 0.5)  # Bear phases
+        phase_score = max(0, min(100, phase_score))
+
+        # 6. Sentiment Score (10%) - Contrarian
+        # Low fear = low score (contrarian sell signal)
+        # High fear = high score (contrarian buy signal)
+        if fear_greed < 20:
+            sentiment_score = 90  # Extreme fear = buy
+        elif fear_greed < 35:
+            sentiment_score = 75
+        elif fear_greed < 50:
+            sentiment_score = 55
+        elif fear_greed < 65:
+            sentiment_score = 45
+        elif fear_greed < 80:
+            sentiment_score = 30
+        else:
+            sentiment_score = 15  # Extreme greed = sell
+
+        # Calculate weighted composite
+        composite = (
+            valuation_score * 0.25 +
+            liquidity_score * 0.20 +
+            trend_score * 0.20 +
+            biz_score * 0.15 +
+            phase_score * 0.10 +
+            sentiment_score * 0.10
+        )
+
+        # Determine rating
+        if composite >= 80:
+            rating = 'STRONG BUY'
+            action = 'Maximum accumulation zone. Back up the truck.'
+        elif composite >= 65:
+            rating = 'BUY'
+            action = 'Good entry. Accumulate on dips.'
+        elif composite >= 50:
+            rating = 'HOLD'
+            action = 'Neutral zone. Hold positions, selective adds.'
+        elif composite >= 35:
+            rating = 'REDUCE'
+            action = 'Take some profits. Reduce exposure.'
+        elif composite >= 20:
+            rating = 'SELL'
+            action = 'Distribute positions. Move to safety.'
+        else:
+            rating = 'STRONG SELL'
+            action = 'Exit now. Capital preservation priority.'
+
+        return {
+            'overall_score': round(composite, 1),
+            'rating': rating,
+            'action': action,
+            'components': {
+                'valuation': {'score': valuation_score, 'weight': '25%', 'input': f'MVRV {mvrv:.2f}'},
+                'liquidity': {'score': round(liquidity_score, 1), 'weight': '20%', 'input': liquidity.get('regime', 'N/A')},
+                'trend': {'score': round(trend_score, 1), 'weight': '20%', 'input': trends.get('alignment', 'N/A')},
+                'business_cycle': {'score': round(biz_score, 1), 'weight': '15%', 'input': business_cycle.get('stage', 'N/A')},
+                'phase': {'score': round(phase_score, 1), 'weight': '10%', 'input': phase},
+                'sentiment': {'score': sentiment_score, 'weight': '10%', 'input': f'F&G {fear_greed}'}
+            },
+            'interpretation': self._interpret_composite(composite, mvrv, phase)
+        }
+
+    def _interpret_composite(self, score: float, mvrv: float, phase: str) -> str:
+        """Generate human-readable interpretation of composite score"""
+
+        if score >= 70:
+            return f"Strong bullish setup. All major indicators align positively. MVRV {mvrv:.2f} supports accumulation. High conviction entry zone."
+        elif score >= 55:
+            return f"Moderately bullish. Most indicators positive but some caution warranted. Good risk/reward for adding exposure."
+        elif score >= 45:
+            return f"Neutral conditions. Mixed signals across indicators. Hold existing positions, wait for clarity before adding."
+        elif score >= 35:
+            return f"Caution warranted. Multiple indicators turning negative. Consider reducing exposure and taking profits."
+        else:
+            return f"Bearish setup. Most indicators negative. Prioritize capital preservation. Wait for better entry."
+
     def analyze(self, d: MarketData) -> Dict:
         """Run complete analysis"""
 
@@ -1364,6 +1513,16 @@ class StrategicCycleModel:
             business_cycle=biz
         )
 
+        # Calculate Overall Composite Score
+        composite_score = self._calculate_composite_score(
+            mvrv=d.mvrv,
+            liquidity=liq,
+            trends=trends,
+            business_cycle=biz,
+            phase_result=phase_result,
+            fear_greed=d.fear_greed
+        )
+
         # Compile result
         result = {
             'meta': {
@@ -1386,7 +1545,8 @@ class StrategicCycleModel:
             'scenarios': scenario_analysis,
             'risk_management': risk_analysis,
             'trade_levels': trade_levels_analysis,
-            'watchlist': watchlist_items
+            'watchlist': watchlist_items,
+            'composite_score': composite_score
         }
 
         # Generate thesis

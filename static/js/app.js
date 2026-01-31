@@ -57,6 +57,7 @@ async function refreshData() {
 function updateDashboard(data) {
     updateHeader(data);
     updateSignalCard(data);
+    updateCompositeScore(data);
     updateValuation(data);
     updatePhase(data);
     updateLiquidity(data);
@@ -89,6 +90,69 @@ function updateHeader(data) {
     const change24h = data.btc_trends?.STF?.changes?.['1d'] || 0;
     changeEl.textContent = formatPercent(change24h);
     changeEl.className = 'change ' + (change24h >= 0 ? 'positive' : 'negative');
+}
+
+// Composite Score updates
+function updateCompositeScore(data) {
+    const composite = data.composite_score || {};
+    const components = composite.components || {};
+
+    // Main score and rating
+    const score = composite.overall_score || 0;
+    document.getElementById('composite-score').textContent = score.toFixed(0);
+
+    const ratingEl = document.getElementById('composite-rating');
+    const rating = composite.rating || '--';
+    ratingEl.textContent = rating;
+    ratingEl.className = 'composite-rating ' + rating.toLowerCase().replace(' ', '-');
+
+    // Gauge fill
+    const gaugeFill = document.getElementById('composite-gauge-fill');
+    gaugeFill.style.width = score + '%';
+
+    // Color based on score
+    if (score >= 65) {
+        gaugeFill.style.background = 'linear-gradient(90deg, #10b981, #34d399)';
+    } else if (score >= 50) {
+        gaugeFill.style.background = 'linear-gradient(90deg, #f59e0b, #fbbf24)';
+    } else if (score >= 35) {
+        gaugeFill.style.background = 'linear-gradient(90deg, #f97316, #fb923c)';
+    } else {
+        gaugeFill.style.background = 'linear-gradient(90deg, #ef4444, #f87171)';
+    }
+
+    // Component bars
+    const updateComponent = (id, comp) => {
+        const fillEl = document.getElementById('comp-' + id);
+        const valEl = document.getElementById('comp-' + id + '-val');
+        if (fillEl && comp) {
+            fillEl.style.width = comp.score + '%';
+            // Color based on score
+            if (comp.score >= 65) {
+                fillEl.style.backgroundColor = '#10b981';
+            } else if (comp.score >= 50) {
+                fillEl.style.backgroundColor = '#f59e0b';
+            } else if (comp.score >= 35) {
+                fillEl.style.backgroundColor = '#f97316';
+            } else {
+                fillEl.style.backgroundColor = '#ef4444';
+            }
+        }
+        if (valEl && comp) {
+            valEl.textContent = comp.score.toFixed(0);
+        }
+    };
+
+    updateComponent('valuation', components.valuation);
+    updateComponent('liquidity', components.liquidity);
+    updateComponent('trend', components.trend);
+    updateComponent('bizcycle', components.business_cycle);
+    updateComponent('phase', components.phase);
+    updateComponent('sentiment', components.sentiment);
+
+    // Action text
+    document.getElementById('composite-action').textContent =
+        composite.action || 'Loading...';
 }
 
 // Signal card updates

@@ -51,6 +51,64 @@
             </div>
         </section>
 
+        <!-- Overall Composite Score -->
+        <section class="composite-score-section" id="composite-section">
+            <div class="composite-header">
+                <h2>Overall Cycle Score</h2>
+                <div class="composite-main">
+                    <span class="composite-value" id="composite-score">--</span>
+                    <span class="composite-rating" id="composite-rating">--</span>
+                </div>
+            </div>
+            <div class="composite-gauge">
+                <div class="gauge-track">
+                    <div class="gauge-fill" id="composite-gauge-fill"></div>
+                </div>
+                <div class="gauge-labels">
+                    <span>Sell</span>
+                    <span>Reduce</span>
+                    <span>Hold</span>
+                    <span>Buy</span>
+                    <span>Strong Buy</span>
+                </div>
+            </div>
+            <div class="composite-components" id="composite-components">
+                <div class="component">
+                    <span class="comp-label">Valuation</span>
+                    <div class="comp-bar"><div class="comp-fill" id="comp-valuation"></div></div>
+                    <span class="comp-value" id="comp-valuation-val">--</span>
+                </div>
+                <div class="component">
+                    <span class="comp-label">Liquidity</span>
+                    <div class="comp-bar"><div class="comp-fill" id="comp-liquidity"></div></div>
+                    <span class="comp-value" id="comp-liquidity-val">--</span>
+                </div>
+                <div class="component">
+                    <span class="comp-label">Trend</span>
+                    <div class="comp-bar"><div class="comp-fill" id="comp-trend"></div></div>
+                    <span class="comp-value" id="comp-trend-val">--</span>
+                </div>
+                <div class="component">
+                    <span class="comp-label">Biz Cycle</span>
+                    <div class="comp-bar"><div class="comp-fill" id="comp-bizcycle"></div></div>
+                    <span class="comp-value" id="comp-bizcycle-val">--</span>
+                </div>
+                <div class="component">
+                    <span class="comp-label">Phase</span>
+                    <div class="comp-bar"><div class="comp-fill" id="comp-phase"></div></div>
+                    <span class="comp-value" id="comp-phase-val">--</span>
+                </div>
+                <div class="component">
+                    <span class="comp-label">Sentiment</span>
+                    <div class="comp-bar"><div class="comp-fill" id="comp-sentiment"></div></div>
+                    <span class="comp-value" id="comp-sentiment-val">--</span>
+                </div>
+            </div>
+            <div class="composite-action" id="composite-action">
+                Loading recommendation...
+            </div>
+        </section>
+
         <!-- Main Grid -->
         <div class="dashboard-grid">
             <!-- Valuation Card -->
