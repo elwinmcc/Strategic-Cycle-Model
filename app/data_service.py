@@ -104,12 +104,63 @@ class DataService:
             return {}
 
     async def _fetch_fear_greed(self, client: httpx.AsyncClient) -> Dict:
-        """Fetch Fear & Greed Index"""
+        """Fetch Fear & Greed Index from multiple sources"""
         cache_key = 'fear_greed'
         if cache_key in cache:
             return cache[cache_key]
 
         try:
+            # Try CoinMarketCap Fear & Greed first
+            try:
+                url = "https://coinmarketcap.com/charts/fear-and-greed-index/"
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+                response = await client.get(url, headers=headers, timeout=10.0)
+                if response.status_code == 200:
+                    html = response.text
+                    import re
+
+                    # Look for fear & greed value in the page
+                    patterns = [
+                        r'"fearGreedIndex"\s*:\s*(\d+)',
+                        r'"value"\s*:\s*(\d+)',
+                        r'fear.*?greed.*?(\d+)',
+                        r'index.*?value.*?(\d+)',
+                        r'data-value["\']?\s*=\s*["\']?(\d+)',
+                    ]
+
+                    for pattern in patterns:
+                        match = re.search(pattern, html, re.IGNORECASE)
+                        if match:
+                            value = int(match.group(1))
+                            if 0 <= value <= 100:
+                                # Determine classification
+                                if value <= 20:
+                                    classification = 'Extreme Fear'
+                                elif value <= 40:
+                                    classification = 'Fear'
+                                elif value <= 60:
+                                    classification = 'Neutral'
+                                elif value <= 80:
+                                    classification = 'Greed'
+                                else:
+                                    classification = 'Extreme Greed'
+
+                                result = {
+                                    'value': value,
+                                    'classification': classification,
+                                    'avg_7d': value,  # Will be updated if we get historical
+                                    'avg_30d': value,
+                                    'source': 'coinmarketcap'
+                                }
+                                cache[cache_key] = result
+                                logger.info(f"Fetched F&G from CoinMarketCap: {value} ({classification})")
+                                return result
+            except Exception as e:
+                logger.debug(f"CoinMarketCap F&G fetch error: {e}")
+
+            # Fallback to Alternative.me
             url = f"{self.base_urls['alternative']}/fng/"
             params = {'limit': 30}
 
@@ -128,6 +179,7 @@ class DataService:
                     'classification': current['value_classification'],
                     'avg_7d': round(avg_7d, 1),
                     'avg_30d': round(avg_30d, 1),
+                    'source': 'alternative.me'
                 }
                 cache[cache_key] = result
                 return result
