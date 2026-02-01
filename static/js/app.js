@@ -692,6 +692,64 @@ function updatePeakTiming(data) {
         (current.days_since_halving || 0) + ' days since halving';
     document.getElementById('days-since-bottom').textContent =
         (current.days_since_bottom || 0) + ' days since bottom';
+
+    // LPPL Integration
+    const lpplIntegration = peak.lppl_integration || {};
+    const lpplEl = document.getElementById('lppl-bubble-prob');
+    if (lpplEl) {
+        const bubbleProb = lpplIntegration.bubble_probability || 0;
+        lpplEl.textContent = bubbleProb.toFixed(0) + '%';
+        // Color based on probability
+        if (bubbleProb > 60) {
+            lpplEl.className = 'lppl-value high-prob';
+        } else if (bubbleProb > 30) {
+            lpplEl.className = 'lppl-value medium-prob';
+        } else {
+            lpplEl.className = 'lppl-value low-prob';
+        }
+    }
+
+    const lpplPhaseEl = document.getElementById('lppl-phase');
+    if (lpplPhaseEl) {
+        lpplPhaseEl.textContent = lpplIntegration.lppl_phase || '--';
+    }
+
+    const yearsAwayEl = document.getElementById('lppl-years-away');
+    if (yearsAwayEl) {
+        yearsAwayEl.textContent = (lpplIntegration.years_to_lppl_bubble || '--') + ' yrs';
+    }
+
+    const lpplInsightEl = document.getElementById('lppl-insight');
+    if (lpplInsightEl) {
+        lpplInsightEl.textContent = lpplIntegration.lppl_insight || 'Loading...';
+    }
+
+    // Power Law data from power_law_lppl
+    const powerLaw = data.power_law_lppl || {};
+    const plData = powerLaw.power_law || {};
+
+    const plZoneEl = document.getElementById('pl-zone');
+    if (plZoneEl) {
+        const zone = plData.zone || 'UNKNOWN';
+        plZoneEl.textContent = zone.replace('_', ' ');
+        plZoneEl.className = 'lppl-value zone-badge ' + zone.toLowerCase().replace('_', '-');
+    }
+
+    const plPercentileEl = document.getElementById('pl-percentile');
+    if (plPercentileEl) {
+        plPercentileEl.textContent = (plData.percentile_in_corridor || 0).toFixed(0) + '%';
+    }
+
+    // No 2025 bubble indicator
+    const no2025El = document.getElementById('no-2025-bubble');
+    if (no2025El) {
+        const noBubble = lpplIntegration.no_2025_bubble;
+        if (noBubble) {
+            no2025El.style.display = 'flex';
+        } else {
+            no2025El.style.display = 'none';
+        }
+    }
 }
 
 // Risk Management updates

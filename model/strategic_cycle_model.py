@@ -1450,7 +1450,8 @@ class StrategicCycleModel:
             RiskManagementEngine,
             TradeLevelsEngine,
             WatchlistEngine,
-            PeakTimingEngine
+            PeakTimingEngine,
+            PowerLawLPPLEngine
         )
         self.cycle_intelligence = CycleIntelligenceEngine()
         self.scenarios = ScenarioEngine()
@@ -1458,6 +1459,7 @@ class StrategicCycleModel:
         self.trade_levels = TradeLevelsEngine()
         self.watchlist = WatchlistEngine()
         self.peak_timing = PeakTimingEngine()
+        self.power_law_lppl = PowerLawLPPLEngine()
 
     def _calculate_composite_score(self, mvrv: float, liquidity: Dict,
                                     trends: Dict, business_cycle: Dict,
@@ -1695,6 +1697,17 @@ class StrategicCycleModel:
             liquidity_score=liq['score']
         )
 
+        # Power Law with LPPL Bubble Analysis (Perrenod Model)
+        power_law_lppl = self.power_law_lppl.analyze(
+            price=d.btc_price,
+            btc_age_days=d.days_since_genesis
+        )
+
+        # Integrate LPPL insights into peak timing
+        peak_timing_forecast = self._integrate_lppl_with_peak_timing(
+            peak_timing_forecast, power_law_lppl, d.mvrv
+        )
+
         # Compile result
         result = {
             'meta': {
@@ -1719,13 +1732,108 @@ class StrategicCycleModel:
             'trade_levels': trade_levels_analysis,
             'watchlist': watchlist_items,
             'composite_score': composite_score,
-            'peak_timing': peak_timing_forecast
+            'peak_timing': peak_timing_forecast,
+            'power_law_lppl': power_law_lppl
         }
 
         # Generate thesis
         result['thesis'] = self.thesis_gen.generate(result)
 
         return result
+
+    def _integrate_lppl_with_peak_timing(self, peak_timing: Dict,
+                                          lppl: Dict, mvrv: float) -> Dict:
+        """
+        Integrate LPPL bubble analysis with existing peak timing forecast.
+
+        The LPPL model provides:
+        1. Log-periodic wavelength λ = 2.07 predicts bubble spacing
+        2. Next fundamental bubble: May 2027 (age 18.5 years)
+        3. 2025 has NO bubble predicted - growth without bubble dynamics
+
+        This integration:
+        - Adjusts peak timing confidence based on LPPL phase
+        - Adds LPPL bubble probability to forecast
+        - Combines multiple timing methodologies
+        """
+        lppl_analysis = lppl.get('lppl_analysis', {})
+        bubble_predictions = lppl.get('bubble_predictions', {})
+        current_status = lppl.get('current_status', {})
+        power_law = lppl.get('power_law', {})
+
+        # Extract LPPL data
+        bubble_prob = lppl_analysis.get('bubble_probability', {}).get('probability_pct', 0)
+        lppl_phase = lppl_analysis.get('phase_status', 'UNKNOWN')
+        years_to_next_bubble = current_status.get('years_to_next_bubble', 2.0)
+        no_2025_bubble = bubble_predictions.get('no_2025_bubble', {})
+
+        # Current composite forecast from existing peak timing
+        composite = peak_timing.get('composite_forecast', {})
+        existing_days = composite.get('days_to_peak_est', 365)
+        existing_date = composite.get('peak_date_est', '')
+
+        # LPPL-adjusted timing
+        # If LPPL says next bubble is May 2027 (≈1.3 years from Feb 2026)
+        # and existing forecast differs significantly, blend them
+
+        lppl_days_to_bubble = int(years_to_next_bubble * 365)
+
+        # Weighting based on MVRV and bubble probability
+        if mvrv < 2.0 and bubble_prob < 30:
+            # Early cycle, trust LPPL more (says no bubble until 2027)
+            lppl_weight = 0.40
+            existing_weight = 0.60
+        elif mvrv < 3.0:
+            # Mid cycle, balanced
+            lppl_weight = 0.30
+            existing_weight = 0.70
+        else:
+            # Late cycle, LPPL less relevant
+            lppl_weight = 0.20
+            existing_weight = 0.80
+
+        # Blended estimate
+        blended_days = int(existing_days * existing_weight + lppl_days_to_bubble * lppl_weight)
+
+        # Update composite forecast with LPPL integration
+        peak_timing['composite_forecast']['lppl_integrated_days'] = blended_days
+        peak_timing['composite_forecast']['lppl_weight'] = lppl_weight
+
+        # Add LPPL summary to peak timing
+        peak_timing['lppl_integration'] = {
+            'bubble_probability': bubble_prob,
+            'lppl_phase': lppl_phase,
+            'years_to_lppl_bubble': round(years_to_next_bubble, 2),
+            'lppl_predicted_peak': 'May 2027',
+            'power_law_zone': power_law.get('zone', 'UNKNOWN'),
+            'power_law_percentile': power_law.get('percentile_in_corridor', 50),
+            'no_2025_bubble': no_2025_bubble.get('bubble_predicted', True) == False,
+            'lppl_insight': self._generate_lppl_insight(
+                bubble_prob, lppl_phase, years_to_next_bubble, mvrv
+            ),
+            'methodology': 'Perrenod LPPL Model (λ=2.07) integrated with phase-based timing'
+        }
+
+        return peak_timing
+
+    def _generate_lppl_insight(self, bubble_prob: float, phase: str,
+                                years_to_bubble: float, mvrv: float) -> str:
+        """Generate human-readable LPPL insight."""
+
+        if years_to_bubble > 1.5 and bubble_prob < 20:
+            return f"LPPL model predicts NO bubble until May 2027 ({years_to_bubble:.1f} years away). Current conditions suggest healthy growth without bubble dynamics. MVRV {mvrv:.2f} confirms early-mid cycle positioning."
+
+        elif years_to_bubble > 1.0 and bubble_prob < 40:
+            return f"Next LPPL bubble window: May 2027 ({years_to_bubble:.1f} years). Low bubble probability ({bubble_prob:.0f}%) supports continued accumulation. Growth may be steady rather than parabolic."
+
+        elif years_to_bubble < 1.0:
+            return f"Approaching May 2027 bubble window ({years_to_bubble:.1f} years). Begin monitoring for LPPL bubble characteristics. Current bubble probability: {bubble_prob:.0f}%."
+
+        elif bubble_prob > 60:
+            return f"Elevated bubble probability ({bubble_prob:.0f}%) despite LPPL timing. Price deviation from power law significant. Exercise caution regardless of timing model."
+
+        else:
+            return f"LPPL phase: {phase}. Bubble probability: {bubble_prob:.0f}%. Next predicted bubble: May 2027."
 
 
 # =============================================================================

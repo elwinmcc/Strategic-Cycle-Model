@@ -1899,3 +1899,446 @@ class PeakTimingEngine:
             {'date': '2025-Q4', 'event': 'Historical peak window', 'status': 'UPCOMING', 'impact': 'Most likely peak zone based on patterns'},
             {'date': '2026-Q1', 'event': 'Extended peak window', 'status': 'UPCOMING', 'impact': 'If cycle lengthening continues'}
         ]
+
+
+# =============================================================================
+# POWER LAW WITH LPPL BUBBLE DETECTION ENGINE
+# =============================================================================
+
+class PowerLawLPPLEngine:
+    """
+    Bitcoin Power Law with Log-Periodic Power Law (LPPL) Bubble Detection.
+
+    Based on Stephen Perrenod's research:
+    - Bitcoin follows continuous scale invariance: P ~ T^k
+    - Bubbles follow discrete scale invariance with log-periodic oscillations
+    - λ (log-periodic wavelength) ≈ 2.07 determines bubble spacing
+
+    Key findings:
+    - Power law index k ≈ 5.3-5.7 (uses 5.4 as baseline)
+    - Fundamental mode bubbles: 2011, 2013, 2017 peaks
+    - First harmonic (√λ): 2021 double-peak
+    - Next fundamental bubble predicted: May 2027 (age ~18.4 years)
+    - 2025 has NO bubble predicted under this framework
+
+    Reference: https://stephenperrenod.substack.com/p/why-is-there-no-bitcoin-bubble-in
+    """
+
+    # Bitcoin Genesis: January 3, 2009
+    GENESIS_DATE = date(2009, 1, 3)
+
+    # Power Law Parameters
+    POWER_LAW_INDEX_USD = 5.7      # k for USD price
+    POWER_LAW_INDEX_GOLD = 5.3    # k for gold-denominated
+    POWER_LAW_INDEX = 5.4         # Average/baseline
+
+    # LPPL Parameters (from Fourier/wavelet analysis)
+    LAMBDA = 2.07                  # Log-periodic wavelength
+    LAMBDA_HARMONIC = np.sqrt(2.07)  # First harmonic ≈ 1.44
+
+    # Historical bubble ages (years since genesis)
+    HISTORICAL_BUBBLES = {
+        '2011': 2.92,   # Nov 2011 peak
+        '2013': 4.92,   # Dec 2013 peak
+        '2017': 8.95,   # Dec 2017 peak
+        '2021': 12.89,  # Nov 2021 peak (harmonic)
+    }
+
+    # Calibration constant (derived from fitting historical data)
+    # P = A * T^k where A is calibrated to historical prices
+    CALIBRATION_A = 0.0002  # Approximate - gives reasonable fair values
+
+    def analyze(self, price: float, btc_age_days: int = None) -> Dict:
+        """
+        Comprehensive Power Law and LPPL analysis.
+
+        Args:
+            price: Current BTC price in USD
+            btc_age_days: Days since genesis (calculated if not provided)
+
+        Returns:
+            Dict with power law metrics, bubble status, and predictions
+        """
+        today = date.today()
+
+        if btc_age_days is None:
+            btc_age_days = (today - self.GENESIS_DATE).days
+
+        btc_age_years = btc_age_days / 365.25
+
+        # Power Law calculations
+        power_law = self._calculate_power_law(price, btc_age_years)
+
+        # LPPL Bubble analysis
+        lppl = self._analyze_lppl_bubbles(btc_age_years, price, power_law['fair_value'])
+
+        # Bubble predictions
+        predictions = self._predict_bubbles(btc_age_years)
+
+        # Current status assessment
+        status = self._assess_current_status(
+            price, power_law, lppl, btc_age_years
+        )
+
+        return {
+            'bitcoin_age': {
+                'days': btc_age_days,
+                'years': round(btc_age_years, 2),
+                'genesis_date': str(self.GENESIS_DATE)
+            },
+            'power_law': power_law,
+            'lppl_analysis': lppl,
+            'bubble_predictions': predictions,
+            'current_status': status,
+            'methodology': {
+                'power_law_index': self.POWER_LAW_INDEX,
+                'lambda': self.LAMBDA,
+                'reference': 'Perrenod LPPL Model'
+            }
+        }
+
+    def _calculate_power_law(self, price: float, age_years: float) -> Dict:
+        """
+        Calculate Power Law fair value and deviation.
+
+        Formula: P_fair = A * T^k
+        Where T is age in years and k is the power law index.
+        """
+        # Calculate fair value using power law
+        # Using a more sophisticated calibration based on historical data
+        # The formula P = A * T^k needs calibration
+
+        # Calibrate A using known data point: $69,000 at age 12.89 years (Nov 2021)
+        # A = P / T^k = 69000 / (12.89^5.4) ≈ 0.085
+        # But that was a bubble peak. Use support line instead.
+        # Support at Nov 2022 (~$16,000 at age ~13.9): A ≈ 0.015
+
+        # Better approach: Use regression-derived coefficients
+        # Log(P) = log(A) + k * log(T)
+        # From historical data fitting: log(A) ≈ -2.5, so A ≈ 0.082
+
+        # Use median/support line coefficient
+        A_support = 0.015   # Lower bound (support)
+        A_median = 0.045    # Median fair value
+        A_upper = 0.12      # Upper bound (resistance)
+
+        fair_value_support = A_support * (age_years ** self.POWER_LAW_INDEX)
+        fair_value_median = A_median * (age_years ** self.POWER_LAW_INDEX)
+        fair_value_upper = A_upper * (age_years ** self.POWER_LAW_INDEX)
+
+        # Deviation from median fair value
+        deviation_pct = ((price - fair_value_median) / fair_value_median) * 100
+
+        # Percentile within the power law corridor
+        if price <= fair_value_support:
+            percentile = 0
+        elif price >= fair_value_upper:
+            percentile = 100
+        else:
+            # Linear interpolation within corridor
+            range_size = fair_value_upper - fair_value_support
+            percentile = ((price - fair_value_support) / range_size) * 100
+
+        # Zone classification
+        if percentile < 20:
+            zone = 'DEEP_VALUE'
+            zone_desc = 'At or below power law support - maximum opportunity'
+        elif percentile < 40:
+            zone = 'VALUE'
+            zone_desc = 'Lower half of corridor - favorable entry'
+        elif percentile < 60:
+            zone = 'FAIR'
+            zone_desc = 'Middle of corridor - fair value'
+        elif percentile < 80:
+            zone = 'EXTENDED'
+            zone_desc = 'Upper corridor - above fair value'
+        else:
+            zone = 'BUBBLE_TERRITORY'
+            zone_desc = 'Above corridor - bubble conditions possible'
+
+        return {
+            'fair_value_support': int(fair_value_support),
+            'fair_value_median': int(fair_value_median),
+            'fair_value_upper': int(fair_value_upper),
+            'current_price': int(price),
+            'deviation_from_median_pct': round(deviation_pct, 1),
+            'percentile_in_corridor': round(percentile, 1),
+            'zone': zone,
+            'zone_description': zone_desc,
+            'power_law_index': self.POWER_LAW_INDEX
+        }
+
+    def _analyze_lppl_bubbles(self, age_years: float, price: float,
+                               fair_value: float) -> Dict:
+        """
+        Analyze Log-Periodic Power Law bubble patterns.
+
+        LPPL bubbles follow discrete scale invariance where peaks occur
+        at ages related by the log-periodic wavelength λ ≈ 2.07.
+
+        Fundamental mode: T_n+1 / T_n ≈ λ
+        First harmonic: T_n+1 / T_n ≈ √λ
+        """
+        # Calculate ratios from historical bubbles
+        bubble_ages = list(self.HISTORICAL_BUBBLES.values())
+
+        # Calculate age ratios
+        ratios = []
+        for i in range(1, len(bubble_ages)):
+            ratio = bubble_ages[i] / bubble_ages[i-1]
+            ratios.append(ratio)
+
+        # Check if current age aligns with bubble pattern
+        last_bubble_age = bubble_ages[-1]  # 2021 peak at 12.89 years
+
+        # Next fundamental bubble: last_age * λ
+        next_fundamental = last_bubble_age * self.LAMBDA  # ≈ 26.7 years (2035)
+
+        # But 2021 was a harmonic, so check fundamental sequence
+        # 2017 was at 8.95 years, next fundamental = 8.95 * λ ≈ 18.5 years (May 2027)
+        fundamental_2017_age = self.HISTORICAL_BUBBLES['2017']
+        next_fundamental_from_2017 = fundamental_2017_age * self.LAMBDA  # ~18.5 years
+
+        # Calculate proximity to bubble windows
+        proximity_to_next_fundamental = abs(age_years - next_fundamental_from_2017)
+        proximity_to_2027_bubble = next_fundamental_from_2017 - age_years
+
+        # Bubble window detection (within 0.5 years of predicted peak)
+        in_bubble_window = proximity_to_next_fundamental < 0.5
+
+        # Calculate oscillation phase
+        # Using log-periodic oscillation: cos(ω * ln(Tc - t))
+        # Simplified: check if we're in bubble-prone phase
+        log_age = np.log(age_years)
+        omega = 2 * np.pi / np.log(self.LAMBDA)
+        oscillation_phase = np.cos(omega * log_age)
+
+        # Phase interpretation
+        if oscillation_phase > 0.7:
+            phase_status = 'BUBBLE_PRONE'
+            phase_desc = 'In bubble-favorable phase of LPPL oscillation'
+        elif oscillation_phase > 0.3:
+            phase_status = 'TRANSITION'
+            phase_desc = 'Transitioning toward/from bubble phase'
+        elif oscillation_phase > -0.3:
+            phase_status = 'NEUTRAL'
+            phase_desc = 'Neutral phase - growth without bubble dynamics'
+        else:
+            phase_status = 'CORRECTION_PRONE'
+            phase_desc = 'In correction-favorable phase'
+
+        # 2025 specific note from the research
+        years_to_2027_bubble = max(0, proximity_to_2027_bubble)
+
+        return {
+            'lambda': self.LAMBDA,
+            'lambda_harmonic': round(self.LAMBDA_HARMONIC, 3),
+            'historical_ratios': [round(r, 2) for r in ratios],
+            'next_fundamental_bubble': {
+                'predicted_age': round(next_fundamental_from_2017, 2),
+                'predicted_date': 'May 2027',
+                'years_away': round(years_to_2027_bubble, 2),
+                'source': '2017 peak × λ (2.07)'
+            },
+            'oscillation_phase': round(oscillation_phase, 3),
+            'phase_status': phase_status,
+            'phase_description': phase_desc,
+            'in_bubble_window': in_bubble_window,
+            'perrenod_2025_note': 'No bubble predicted for 2025 under LPPL framework',
+            'bubble_probability': self._calculate_bubble_probability(
+                age_years, oscillation_phase, price, fair_value
+            )
+        }
+
+    def _calculate_bubble_probability(self, age: float, phase: float,
+                                       price: float, fair_value: float) -> Dict:
+        """
+        Calculate probability of being in a bubble based on multiple factors.
+        """
+        # Factor 1: Price deviation from fair value
+        deviation = (price - fair_value) / fair_value
+        if deviation > 1.5:
+            price_factor = 90
+        elif deviation > 1.0:
+            price_factor = 70
+        elif deviation > 0.5:
+            price_factor = 40
+        elif deviation > 0.2:
+            price_factor = 20
+        else:
+            price_factor = 5
+
+        # Factor 2: Oscillation phase
+        phase_factor = max(0, phase * 50 + 25)  # 0-75 range
+
+        # Factor 3: Proximity to predicted bubble (2027)
+        next_bubble_age = 18.5  # May 2027
+        years_to_bubble = abs(age - next_bubble_age)
+        if years_to_bubble < 0.5:
+            timing_factor = 80
+        elif years_to_bubble < 1.0:
+            timing_factor = 50
+        elif years_to_bubble < 2.0:
+            timing_factor = 20
+        else:
+            timing_factor = 5
+
+        # Weighted probability
+        probability = (
+            price_factor * 0.50 +
+            phase_factor * 0.25 +
+            timing_factor * 0.25
+        )
+
+        if probability > 70:
+            assessment = 'HIGH'
+            action = 'Bubble conditions present - distribution recommended'
+        elif probability > 40:
+            assessment = 'MODERATE'
+            action = 'Some bubble characteristics - monitor closely'
+        elif probability > 20:
+            assessment = 'LOW'
+            action = 'Normal market conditions - accumulation favorable'
+        else:
+            assessment = 'MINIMAL'
+            action = 'No bubble indicators - strong accumulation zone'
+
+        return {
+            'probability_pct': round(probability, 1),
+            'assessment': assessment,
+            'action': action,
+            'factors': {
+                'price_deviation': round(price_factor, 1),
+                'lppl_phase': round(phase_factor, 1),
+                'timing_proximity': round(timing_factor, 1)
+            }
+        }
+
+    def _predict_bubbles(self, current_age: float) -> Dict:
+        """
+        Predict future bubble windows based on LPPL model.
+        """
+        # Historical bubbles for reference
+        history = [
+            {'year': 2011, 'age': 2.92, 'type': 'Fundamental', 'peak': '$32'},
+            {'year': 2013, 'age': 4.92, 'type': 'Fundamental', 'peak': '$1,150'},
+            {'year': 2017, 'age': 8.95, 'type': 'Fundamental', 'peak': '$19,800'},
+            {'year': 2021, 'age': 12.89, 'type': 'Harmonic', 'peak': '$69,000'},
+        ]
+
+        # Future predictions
+        # Next fundamental from 2017: 8.95 × 2.07 = 18.5 years = May 2027
+        next_fundamental_age = 8.95 * self.LAMBDA
+        next_fundamental_date = self.GENESIS_DATE + timedelta(days=next_fundamental_age * 365.25)
+
+        # Next harmonic from 2021: 12.89 × 1.44 = 18.6 years ≈ May 2027 (converges!)
+        next_harmonic_age = 12.89 * self.LAMBDA_HARMONIC
+
+        # Following fundamental: 18.5 × 2.07 ≈ 38.3 years = 2047
+        following_fundamental_age = next_fundamental_age * self.LAMBDA
+
+        predictions = [
+            {
+                'type': 'NEXT_FUNDAMENTAL',
+                'predicted_age': round(next_fundamental_age, 2),
+                'predicted_date': str(next_fundamental_date),
+                'approximate_date': 'May 2027',
+                'years_away': round(next_fundamental_age - current_age, 2),
+                'confidence': 'HIGH',
+                'note': 'Fundamental mode bubble (2017 × λ)'
+            },
+            {
+                'type': 'FOLLOWING_FUNDAMENTAL',
+                'predicted_age': round(following_fundamental_age, 1),
+                'approximate_date': '~2047',
+                'years_away': round(following_fundamental_age - current_age, 1),
+                'confidence': 'LOW',
+                'note': 'Long-term extrapolation'
+            }
+        ]
+
+        # No 2025 bubble warning
+        no_2025_bubble = {
+            'year': 2025,
+            'bubble_predicted': False,
+            'explanation': 'LPPL model shows no log-periodic alignment for 2025. Current age (~16 years) falls between bubble windows.',
+            'implication': 'Potential for strong growth without bubble dynamics - healthier bull market'
+        }
+
+        return {
+            'historical': history,
+            'predictions': predictions,
+            'current_age': round(current_age, 2),
+            'no_2025_bubble': no_2025_bubble,
+            'model_insight': 'Bubbles are not random - they follow discrete scale invariance with λ ≈ 2.07'
+        }
+
+    def _assess_current_status(self, price: float, power_law: Dict,
+                                lppl: Dict, age_years: float) -> Dict:
+        """
+        Comprehensive assessment of current market status.
+        """
+        pl_zone = power_law['zone']
+        pl_percentile = power_law['percentile_in_corridor']
+        bubble_prob = lppl['bubble_probability']['probability_pct']
+        phase_status = lppl['phase_status']
+
+        # Overall assessment
+        if pl_zone == 'DEEP_VALUE' and bubble_prob < 20:
+            status = 'MAXIMUM_OPPORTUNITY'
+            recommendation = 'Aggressive accumulation - at power law support with no bubble risk'
+            risk_level = 'LOW'
+        elif pl_zone == 'VALUE' and bubble_prob < 30:
+            status = 'FAVORABLE_ENTRY'
+            recommendation = 'Strong accumulation zone - good risk/reward'
+            risk_level = 'LOW-MEDIUM'
+        elif pl_zone == 'FAIR' and bubble_prob < 50:
+            status = 'NEUTRAL_GROWTH'
+            recommendation = 'Hold positions - normal cycle progression'
+            risk_level = 'MEDIUM'
+        elif pl_zone == 'EXTENDED' or bubble_prob > 50:
+            status = 'CAUTION'
+            recommendation = 'Begin profit-taking - above fair value'
+            risk_level = 'MEDIUM-HIGH'
+        elif pl_zone == 'BUBBLE_TERRITORY' or bubble_prob > 70:
+            status = 'DISTRIBUTION_ZONE'
+            recommendation = 'Active distribution - bubble conditions present'
+            risk_level = 'HIGH'
+        else:
+            status = 'MONITORING'
+            recommendation = 'Continue monitoring - mixed signals'
+            risk_level = 'MEDIUM'
+
+        # 2025 specific insight
+        years_to_next_bubble = max(0, 18.5 - age_years)
+
+        return {
+            'status': status,
+            'recommendation': recommendation,
+            'risk_level': risk_level,
+            'power_law_zone': pl_zone,
+            'power_law_percentile': pl_percentile,
+            'bubble_probability': bubble_prob,
+            'lppl_phase': phase_status,
+            'years_to_next_bubble': round(years_to_next_bubble, 2),
+            'key_insight': self._generate_insight(pl_zone, bubble_prob, years_to_next_bubble)
+        }
+
+    def _generate_insight(self, zone: str, bubble_prob: float,
+                          years_to_bubble: float) -> str:
+        """Generate key insight based on current conditions."""
+
+        if years_to_bubble > 1.0 and bubble_prob < 30:
+            return f"LPPL model suggests growth without bubble dynamics until ~May 2027. Current conditions favor accumulation with {years_to_bubble:.1f} years until next predicted bubble window."
+
+        elif years_to_bubble < 1.0:
+            return f"Approaching bubble window (May 2027). Monitor for parabolic price action and begin exit planning within {years_to_bubble:.1f} years."
+
+        elif zone in ['DEEP_VALUE', 'VALUE']:
+            return f"Price at {zone.replace('_', ' ').lower()} within power law corridor. Historical data shows strong forward returns from this zone."
+
+        elif zone == 'BUBBLE_TERRITORY':
+            return "Price above power law corridor - bubble-like conditions. Exercise caution regardless of timing model."
+
+        else:
+            return f"Normal cycle progression. Power law zone: {zone}. Bubble probability: {bubble_prob:.0f}%."
