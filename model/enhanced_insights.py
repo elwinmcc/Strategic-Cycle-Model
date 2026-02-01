@@ -1720,50 +1720,79 @@ class PeakTimingEngine:
         """
         Combine all methods into composite forecast.
 
-        CRITICAL: Phase-based timing is most reliable when MVRV is low.
-        When MVRV < 2.0, we KNOW we're early in the cycle regardless of time elapsed.
-        When MVRV > 3.5, we're in peak territory and timing becomes more certain.
+        OPTIMIZED v7.2: Better integration of timing methodologies.
 
-        Weight adjustment by MVRV:
-        - MVRV < 2.0: Phase 50%, MC 20%, Historical 30% (phase dominates - we're early)
-        - MVRV 2.0-3.0: Phase 35%, MC 35%, Historical 30% (balanced)
-        - MVRV > 3.0: Phase 20%, MC 50%, Historical 30% (MC/timing dominates - peak zone)
+        Historical halving patterns show cycles are LENGTHENING:
+        - Cycle 1: 366 days halving-to-peak
+        - Cycle 2: 526 days
+        - Cycle 3: 548 days
+        - Cycle 4: Expected 600-700 days (cycle lengthening)
+
+        Weight adjustment by MVRV (accounts for cycle position):
+        - MVRV < 2.0: Phase 40%, Historical 25%, MC 15%, Reserve 20% for LPPL
+        - MVRV 2.0-3.0: Phase 30%, Historical 25%, MC 25%, Reserve 20% for LPPL
+        - MVRV > 3.0: Phase 20%, Historical 20%, MC 40%, Reserve 20% for LPPL
+
+        Note: 20% is reserved for LPPL integration done in _integrate_lppl_with_peak_timing
         """
-        hist_mid_days = historical['from_halving']['remaining_days_est']
+        hist_mid_days_original = historical['from_halving']['remaining_days_est']
         mc_mid_days = mc['remaining_days']['median']
         phase_mid_days = phase['months_to_peak']['mid'] * 30
 
+        # Account for cycle lengthening: if historical shows 0 (past average),
+        # use extended estimate based on cycle lengthening trend
+        # Historical averages: C1=366, C2=526, C3=548 days → ~6% lengthening per cycle
+        # C4 projection: 548 * 1.15 ≈ 630-700 days (conservative: 700-750)
+        halving_date = date(2024, 4, 20)
+        days_since_halving = (date.today() - halving_date).days
+
+        if hist_mid_days_original == 0:
+            # Past the old average (480 days) - use extended cycle 4 estimate
+            extended_avg = 730  # Cycle 4 with ~15% lengthening from C3
+            hist_mid_days = max(30, extended_avg - days_since_halving)  # Min 30 days
+            hist_adjusted = True
+        else:
+            hist_mid_days = hist_mid_days_original
+            hist_adjusted = False
+
         # Dynamic weighting based on MVRV
         if mvrv < 2.0:
-            # Early cycle: trust phase-based more than time-based
-            weight_phase = 0.50
-            weight_mc = 0.20
-            weight_hist = 0.30
+            # Early cycle: phase-based dominates, historical useful
+            weight_phase = 0.40
+            weight_mc = 0.15
+            weight_hist = 0.25
+            # Remaining 20% allocated to LPPL in integration step
             confidence = 'LOW'
-            note = 'Early in cycle - phase-based timing dominates, high uncertainty'
+            note = 'Early cycle - phase-based and LPPL timing dominate'
         elif mvrv < 3.0:
             # Mid cycle: balanced approach
-            weight_phase = 0.35
-            weight_mc = 0.35
-            weight_hist = 0.30
+            weight_phase = 0.30
+            weight_mc = 0.25
+            weight_hist = 0.25
             confidence = 'MEDIUM'
-            note = 'Mid-cycle - balanced timing approach'
+            note = 'Mid-cycle - balanced timing approach with LPPL'
         elif mvrv < 4.0:
-            # Late cycle: timing becomes more important
-            weight_phase = 0.25
-            weight_mc = 0.45
-            weight_hist = 0.30
+            # Late cycle: Monte Carlo more important
+            weight_phase = 0.20
+            weight_mc = 0.40
+            weight_hist = 0.20
             confidence = 'HIGH'
-            note = 'Late cycle - peak approaching, timing more certain'
+            note = 'Late cycle - peak approaching, MC timing important'
         else:
             # Extended: peak imminent
-            weight_phase = 0.20
-            weight_mc = 0.50
-            weight_hist = 0.30
+            weight_phase = 0.15
+            weight_mc = 0.45
+            weight_hist = 0.20
             confidence = 'VERY HIGH'
             note = 'Extended valuation - peak likely imminent'
 
-        # Weighted average
+        # Normalize weights to 80% (LPPL gets 20% in integration)
+        total_base = weight_phase + weight_mc + weight_hist
+        weight_phase = weight_phase / total_base * 0.80
+        weight_mc = weight_mc / total_base * 0.80
+        weight_hist = weight_hist / total_base * 0.80
+
+        # Weighted average (80% of final - LPPL adds remaining 20%)
         composite_days = int(
             hist_mid_days * weight_hist +
             mc_mid_days * weight_mc +
@@ -1772,11 +1801,11 @@ class PeakTimingEngine:
 
         # Ensure minimum days based on MVRV (can't peak with MVRV < 3.0)
         if mvrv < 2.0:
-            composite_days = max(composite_days, 180)  # At least 6 months
+            composite_days = max(composite_days, 240)  # At least 8 months
         elif mvrv < 2.5:
-            composite_days = max(composite_days, 120)  # At least 4 months
+            composite_days = max(composite_days, 150)  # At least 5 months
         elif mvrv < 3.0:
-            composite_days = max(composite_days, 60)   # At least 2 months
+            composite_days = max(composite_days, 90)   # At least 3 months
 
         today = date.today()
         composite_peak = today + timedelta(days=composite_days)
@@ -1790,14 +1819,17 @@ class PeakTimingEngine:
             'peak_quarter': peak_quarter,
             'confidence': confidence,
             'confidence_note': note,
-            'methodology': f'Weighted by MVRV ({mvrv:.2f}): {int(weight_hist*100)}% historical, {int(weight_mc*100)}% Monte Carlo, {int(weight_phase*100)}% phase-based',
+            'methodology': f'Weighted by MVRV ({mvrv:.2f}): {int(weight_hist*100)}% historical, {int(weight_mc*100)}% MC, {int(weight_phase*100)}% phase (80% base, 20% LPPL added in integration)',
             'weights_used': {
-                'historical': weight_hist,
-                'monte_carlo': weight_mc,
-                'phase_based': weight_phase
+                'historical': round(weight_hist, 2),
+                'monte_carlo': round(weight_mc, 2),
+                'phase_based': round(weight_phase, 2),
+                'lppl_reserved': 0.20
             },
             'component_estimates': {
                 'historical_days': hist_mid_days,
+                'historical_adjusted': hist_adjusted,
+                'historical_note': 'Adjusted for cycle lengthening (C4 ~730 days)' if hist_adjusted else 'Within historical average',
                 'monte_carlo_days': mc_mid_days,
                 'phase_based_days': int(phase_mid_days)
             },

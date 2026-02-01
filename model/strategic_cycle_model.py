@@ -1463,17 +1463,19 @@ class StrategicCycleModel:
 
     def _calculate_composite_score(self, mvrv: float, liquidity: Dict,
                                     trends: Dict, business_cycle: Dict,
-                                    phase_result: Dict, fear_greed: int) -> Dict:
+                                    phase_result: Dict, fear_greed: int,
+                                    power_law_percentile: float = 50) -> Dict:
         """
         Calculate Overall Composite Score combining all model layers.
 
-        Weights:
-        - Valuation (MVRV)      : 25% - Primary driver
-        - Liquidity             : 20% - Macro backdrop
-        - Trend/Momentum        : 20% - Price action
-        - Business Cycle        : 15% - Economic context
+        OPTIMIZED WEIGHTS (v7.2):
+        - Valuation (MVRV)      : 23% - Primary driver
+        - Liquidity             : 18% - Macro backdrop
+        - Trend/Momentum        : 17% - Price action
+        - Business Cycle        : 12% - Economic context (reduced - ISM less reliable for crypto)
         - Phase Confidence      : 10% - Model conviction
         - Sentiment (inverse)   : 10% - Contrarian signal
+        - Power Law Position    : 10% - NEW: Position in power law corridor
 
         Returns score 0-100 where:
         - 0-20: Strong Sell / Distribution
@@ -1483,14 +1485,7 @@ class StrategicCycleModel:
         - 80-100: Strong Buy / Max Accumulation
         """
 
-        # 1. Valuation Score (25%) - MVRV based
-        # MVRV < 1.0 = 100 (deep value)
-        # MVRV 1.0-1.5 = 85
-        # MVRV 1.5-2.0 = 70
-        # MVRV 2.0-2.5 = 55
-        # MVRV 2.5-3.5 = 40
-        # MVRV 3.5-4.5 = 25
-        # MVRV > 4.5 = 10 (euphoria)
+        # 1. Valuation Score (23%) - MVRV based
         if mvrv < 0.5:
             valuation_score = 100
         elif mvrv < 1.0:
@@ -1510,17 +1505,19 @@ class StrategicCycleModel:
         else:
             valuation_score = 10
 
-        # 2. Liquidity Score (20%) - Already 0-100
+        # 2. Liquidity Score (18%) - Already 0-100
         liquidity_score = liquidity.get('score', 50)
 
-        # 3. Trend Score (20%) - Alignment based
+        # 3. Trend Score (17%) - Alignment based
         alignment_score = trends.get('alignment_score', 50)
         composite_mom = trends.get('composite_momentum', 0)
         # Boost for strong momentum
         trend_score = alignment_score + min(20, max(-20, composite_mom * 2))
         trend_score = max(0, min(100, trend_score))
 
-        # 4. Business Cycle Score (15%) - Already 0-100
+        # 4. Business Cycle Score (12%) - Reduced weight
+        # ISM has been in contraction since Q3 2022 yet BTC rallied significantly
+        # Crypto increasingly decoupled from traditional business cycle
         biz_score = business_cycle.get('score', 50)
 
         # 5. Phase Confidence (10%)
@@ -1536,8 +1533,6 @@ class StrategicCycleModel:
         phase_score = max(0, min(100, phase_score))
 
         # 6. Sentiment Score (10%) - Contrarian
-        # Low fear = low score (contrarian sell signal)
-        # High fear = high score (contrarian buy signal)
         if fear_greed < 20:
             sentiment_score = 90  # Extreme fear = buy
         elif fear_greed < 35:
@@ -1551,14 +1546,21 @@ class StrategicCycleModel:
         else:
             sentiment_score = 15  # Extreme greed = sell
 
-        # Calculate weighted composite
+        # 7. Power Law Position Score (10%) - NEW
+        # Low percentile in corridor = bullish (room to grow)
+        # High percentile = bearish (extended)
+        power_law_score = 100 - power_law_percentile  # Invert: low percentile = high score
+        power_law_score = max(0, min(100, power_law_score))
+
+        # Calculate weighted composite (OPTIMIZED v7.2)
         composite = (
-            valuation_score * 0.25 +
-            liquidity_score * 0.20 +
-            trend_score * 0.20 +
-            biz_score * 0.15 +
+            valuation_score * 0.23 +
+            liquidity_score * 0.18 +
+            trend_score * 0.17 +
+            biz_score * 0.12 +
             phase_score * 0.10 +
-            sentiment_score * 0.10
+            sentiment_score * 0.10 +
+            power_law_score * 0.10
         )
 
         # Determine rating
@@ -1586,12 +1588,13 @@ class StrategicCycleModel:
             'rating': rating,
             'action': action,
             'components': {
-                'valuation': {'score': valuation_score, 'weight': '25%', 'input': f'MVRV {mvrv:.2f}'},
-                'liquidity': {'score': round(liquidity_score, 1), 'weight': '20%', 'input': liquidity.get('regime', 'N/A')},
-                'trend': {'score': round(trend_score, 1), 'weight': '20%', 'input': trends.get('alignment', 'N/A')},
-                'business_cycle': {'score': round(biz_score, 1), 'weight': '15%', 'input': business_cycle.get('stage', 'N/A')},
+                'valuation': {'score': valuation_score, 'weight': '23%', 'input': f'MVRV {mvrv:.2f}'},
+                'liquidity': {'score': round(liquidity_score, 1), 'weight': '18%', 'input': liquidity.get('regime', 'N/A')},
+                'trend': {'score': round(trend_score, 1), 'weight': '17%', 'input': trends.get('alignment', 'N/A')},
+                'business_cycle': {'score': round(biz_score, 1), 'weight': '12%', 'input': business_cycle.get('stage', 'N/A')},
                 'phase': {'score': round(phase_score, 1), 'weight': '10%', 'input': phase},
-                'sentiment': {'score': sentiment_score, 'weight': '10%', 'input': f'F&G {fear_greed}'}
+                'sentiment': {'score': sentiment_score, 'weight': '10%', 'input': f'F&G {fear_greed}'},
+                'power_law': {'score': round(power_law_score, 1), 'weight': '10%', 'input': f'{power_law_percentile:.0f}% of corridor'}
             },
             'interpretation': self._interpret_composite(composite, mvrv, phase)
         }
@@ -1677,14 +1680,25 @@ class StrategicCycleModel:
             business_cycle=biz
         )
 
-        # Calculate Overall Composite Score
+        # Power Law with LPPL Bubble Analysis (Perrenod Model)
+        # Calculate FIRST so we can use it in composite score and peak timing
+        power_law_lppl = self.power_law_lppl.analyze(
+            price=d.btc_price,
+            btc_age_days=d.days_since_genesis
+        )
+
+        # Extract power law percentile for composite score
+        power_law_percentile = power_law_lppl.get('power_law', {}).get('percentile_in_corridor', 50)
+
+        # Calculate Overall Composite Score (now includes power law position)
         composite_score = self._calculate_composite_score(
             mvrv=d.mvrv,
             liquidity=liq,
             trends=trends,
             business_cycle=biz,
             phase_result=phase_result,
-            fear_greed=d.fear_greed
+            fear_greed=d.fear_greed,
+            power_law_percentile=power_law_percentile
         )
 
         # Peak Timing Forecast
@@ -1697,12 +1711,6 @@ class StrategicCycleModel:
             liquidity_score=liq['score']
         )
 
-        # Power Law with LPPL Bubble Analysis (Perrenod Model)
-        power_law_lppl = self.power_law_lppl.analyze(
-            price=d.btc_price,
-            btc_age_days=d.days_since_genesis
-        )
-
         # Integrate LPPL insights into peak timing
         peak_timing_forecast = self._integrate_lppl_with_peak_timing(
             peak_timing_forecast, power_law_lppl, d.mvrv
@@ -1711,7 +1719,7 @@ class StrategicCycleModel:
         # Compile result
         result = {
             'meta': {
-                'model': 'Strategic Cycle Model v7.1',
+                'model': 'Strategic Cycle Model v7.2',
                 'date': d.date or str(date.today()),
                 'btc_price': d.btc_price,
                 'eth_price': d.eth_price,
@@ -1746,15 +1754,16 @@ class StrategicCycleModel:
         """
         Integrate LPPL bubble analysis with existing peak timing forecast.
 
+        OPTIMIZED v7.2: LPPL gets explicit 20% weight in final composite.
+
         The LPPL model provides:
         1. Log-periodic wavelength λ = 2.07 predicts bubble spacing
         2. Next fundamental bubble: May 2027 (age 18.5 years)
-        3. 2025 has NO bubble predicted - growth without bubble dynamics
+        3. Cycles are lengthening - supports later peak timing
 
-        This integration:
-        - Adjusts peak timing confidence based on LPPL phase
-        - Adds LPPL bubble probability to forecast
-        - Combines multiple timing methodologies
+        This integration adds LPPL as the 4th timing methodology:
+        - Base composite (historical + MC + phase): 80%
+        - LPPL timing: 20%
         """
         lppl_analysis = lppl.get('lppl_analysis', {})
         bubble_predictions = lppl.get('bubble_predictions', {})
@@ -1767,51 +1776,50 @@ class StrategicCycleModel:
         years_to_next_bubble = current_status.get('years_to_next_bubble', 2.0)
         no_2025_bubble = bubble_predictions.get('no_2025_bubble', {})
 
-        # Current composite forecast from existing peak timing
+        # Current composite forecast from existing peak timing (80% weighted)
         composite = peak_timing.get('composite_forecast', {})
-        existing_days = composite.get('days_to_peak_est', 365)
-        existing_date = composite.get('peak_date_est', '')
+        base_days = composite.get('days_to_peak_est', 365)
 
-        # LPPL-adjusted timing
-        # If LPPL says next bubble is May 2027 (≈1.3 years from Feb 2026)
-        # and existing forecast differs significantly, blend them
-
+        # LPPL days to bubble
         lppl_days_to_bubble = int(years_to_next_bubble * 365)
 
-        # Weighting based on MVRV and bubble probability
-        if mvrv < 2.0 and bubble_prob < 30:
-            # Early cycle, trust LPPL more (says no bubble until 2027)
-            lppl_weight = 0.40
-            existing_weight = 0.60
-        elif mvrv < 3.0:
-            # Mid cycle, balanced
-            lppl_weight = 0.30
-            existing_weight = 0.70
-        else:
-            # Late cycle, LPPL less relevant
-            lppl_weight = 0.20
-            existing_weight = 0.80
+        # LPPL gets fixed 20% weight (reserved in composite_forecast)
+        # The 80/20 split is maintained regardless of MVRV
+        # But confidence in LPPL varies:
+        lppl_weight = 0.20
+        base_weight = 0.80
 
-        # Blended estimate
-        blended_days = int(existing_days * existing_weight + lppl_days_to_bubble * lppl_weight)
+        # Blended estimate: 80% base + 20% LPPL
+        blended_days = int(base_days * base_weight + lppl_days_to_bubble * lppl_weight)
+
+        # Update peak date based on blended estimate
+        today = date.today()
+        blended_peak = today + timedelta(days=blended_days)
+        blended_quarter = f"Q{(blended_peak.month - 1) // 3 + 1} {blended_peak.year}"
 
         # Update composite forecast with LPPL integration
-        peak_timing['composite_forecast']['lppl_integrated_days'] = blended_days
+        peak_timing['composite_forecast']['days_to_peak_est'] = blended_days
+        peak_timing['composite_forecast']['peak_date_est'] = str(blended_peak)
+        peak_timing['composite_forecast']['peak_quarter'] = blended_quarter
+        peak_timing['composite_forecast']['lppl_days'] = lppl_days_to_bubble
         peak_timing['composite_forecast']['lppl_weight'] = lppl_weight
+        peak_timing['composite_forecast']['base_days_pre_lppl'] = base_days
+        peak_timing['composite_forecast']['methodology'] = f"80% base (hist+MC+phase) + 20% LPPL = {blended_days} days to peak"
 
         # Add LPPL summary to peak timing
         peak_timing['lppl_integration'] = {
-            'bubble_probability': bubble_prob,
+            'bubble_probability': round(bubble_prob, 1),
             'lppl_phase': lppl_phase,
             'years_to_lppl_bubble': round(years_to_next_bubble, 2),
+            'lppl_days_to_bubble': lppl_days_to_bubble,
             'lppl_predicted_peak': 'May 2027',
             'power_law_zone': power_law.get('zone', 'UNKNOWN'),
-            'power_law_percentile': power_law.get('percentile_in_corridor', 50),
-            'no_2025_bubble': no_2025_bubble.get('bubble_predicted', True) == False,
+            'power_law_percentile': round(power_law.get('percentile_in_corridor', 50), 1),
             'lppl_insight': self._generate_lppl_insight(
                 bubble_prob, lppl_phase, years_to_next_bubble, mvrv
             ),
-            'methodology': 'Perrenod LPPL Model (λ=2.07) integrated with phase-based timing'
+            'timing_contribution': f"LPPL adds {lppl_days_to_bubble - base_days:+d} days ({lppl_weight*100:.0f}% weight)",
+            'methodology': 'Perrenod LPPL Model (λ=2.07) - 20% weight in composite timing'
         }
 
         return peak_timing
