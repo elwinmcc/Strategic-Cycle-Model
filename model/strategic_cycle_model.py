@@ -953,9 +953,23 @@ class ForecastEngine:
         else:
             timeline = f"{int(avg_weeks * 0.5)}-{avg_weeks}+ weeks"
 
+        # User-friendly phase display names
+        phase_display_names = {
+            'CAPITULATION': 'Cycle Bottom',
+            'ACCUMULATION': 'Recovery / Accumulation',
+            'EARLY_MARKUP': 'Early Bull Market',
+            'MID_MARKUP': 'Bull Market',
+            'LATE_MARKUP': 'Late Bull / Peak Zone',
+            'DISTRIBUTION': 'Cycle Top / Distribution',
+            'EARLY_MARKDOWN': 'Early Bear Market',
+            'MID_MARKDOWN': 'Bear Market'
+        }
+
         return {
             'current': phase.value,
-            'next': next_phase.value,
+            'current_display': phase_display_names.get(phase.value, phase.value),
+            'next': phase_display_names.get(next_phase.value, next_phase.value),
+            'next_internal': next_phase.value,
             'probability': prob,
             'triggers_required': triggers,
             'triggers_met': met,
@@ -1202,12 +1216,25 @@ class SignalGenerator:
 class ThesisGenerator:
     """Generate 300-word thesis for social media"""
 
+    # User-friendly phase display names
+    PHASE_DISPLAY_NAMES = {
+        'CAPITULATION': 'Cycle Bottom',
+        'ACCUMULATION': 'Recovery / Accumulation',
+        'EARLY_MARKUP': 'Early Bull Market',
+        'MID_MARKUP': 'Bull Market',
+        'LATE_MARKUP': 'Late Bull / Peak Zone',
+        'DISTRIBUTION': 'Cycle Top / Distribution',
+        'EARLY_MARKDOWN': 'Early Bear Market',
+        'MID_MARKDOWN': 'Bear Market'
+    }
+
     def generate(self, result: Dict) -> str:
         # Extract key data
         price = result['meta']['btc_price']
         signal = result['signal']['signal']
         alloc = result['signal']['allocation']
-        phase = result['phase']['phase']
+        phase_internal = result['phase']['phase']
+        phase = self.PHASE_DISPLAY_NAMES.get(phase_internal, phase_internal)
         mvrv = result['phase']['value_details']['mvrv']
         progress = result['phase']['cycle_progress']
         top_score = result['phase']['top_score']

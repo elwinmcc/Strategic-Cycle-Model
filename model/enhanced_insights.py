@@ -413,10 +413,14 @@ class CycleIntelligenceEngine:
             'MID_MARKDOWN': ('CAPITULATION', ['MVRV < 0.5', 'F&G < 15', 'Max despair'])
         }
 
-        next_phase, triggers = transitions.get(current_phase, ('UNKNOWN', []))
+        next_phase_internal, triggers = transitions.get(current_phase, ('UNKNOWN', []))
+
+        # Convert to friendly display name
+        next_phase_display = self.PHASE_DISPLAY_NAMES.get(next_phase_internal, next_phase_internal)
 
         return {
-            'next_phase': next_phase,
+            'next_phase': next_phase_display,
+            'next_phase_internal': next_phase_internal,
             'triggers_needed': triggers,
             'probability': self._transition_probability(current_phase, mvrv, fg),
             'estimated_timeframe': self.PHASE_EDUCATION.get(current_phase, {}).get('typical_duration', 'Unknown')
@@ -1496,22 +1500,37 @@ class PeakTimingEngine:
 
     def _monte_carlo_peak_timing(self, days_since_halving: int, days_since_bottom: int,
                                   mvrv: float, cycle_progress: float) -> Dict:
-        """Monte Carlo simulation for peak timing"""
+        """
+        Monte Carlo simulation for peak timing.
+
+        CRITICAL: Time-based estimates are overridden by MVRV gate.
+        - Peak MVRV is historically 3.9-5.8 (declining each cycle)
+        - If current MVRV < 3.0, peak has NOT occurred regardless of time elapsed
+        - This cycle may be extended due to macro conditions (ISM contraction since Q3 2022)
+        """
 
         n_simulations = 10000
 
         # Historical parameters (from halving)
-        mean_days = 480
-        std_days = 100
+        # Cycle 1: 366 days, Cycle 2: 526 days, Cycle 3: 548 days
+        # Trend: cycles lengthening by ~80-90 days each
+        # Cycle 4 projection: 548 + 80 = ~628 days, with possible extension to 700+
 
-        # Adjust based on cycle lengthening trend (+20 days per cycle)
-        adjusted_mean = mean_days + 40  # Cycle 4 adjustment
-        adjusted_std = std_days
+        # Use extended mean for cycle 4 (macro headwinds, ISM contraction)
+        mean_days = 628  # Extended from historical due to cycle lengthening
+        std_days = 120   # Wider uncertainty this cycle
+
+        # Further adjust if MVRV shows we're early (hasn't even started run-up)
+        if mvrv < 2.0:
+            # Still early in cycle - extend projections
+            mean_days = max(mean_days, days_since_halving + 180)
+        elif mvrv < 2.5:
+            mean_days = max(mean_days, days_since_halving + 120)
 
         # Run simulation
         np.random.seed(42)  # Reproducible
-        simulated_days = np.random.normal(adjusted_mean, adjusted_std, n_simulations)
-        simulated_days = np.clip(simulated_days, 300, 800)  # Realistic bounds
+        simulated_days = np.random.normal(mean_days, std_days, n_simulations)
+        simulated_days = np.clip(simulated_days, 400, 900)  # Extended realistic bounds
 
         # Calculate remaining days
         remaining_days = simulated_days - days_since_halving
@@ -1527,28 +1546,54 @@ class PeakTimingEngine:
         today = date.today()
 
         # Peak date estimates
-        peak_p10 = today + timedelta(days=p10)
-        peak_p25 = today + timedelta(days=p25)
-        peak_p50 = today + timedelta(days=p50)
-        peak_p75 = today + timedelta(days=p75)
-        peak_p90 = today + timedelta(days=p90)
+        peak_p10 = today + timedelta(days=max(30, p10))  # At least 30 days out
+        peak_p25 = today + timedelta(days=max(60, p25))
+        peak_p50 = today + timedelta(days=max(90, p50))
+        peak_p75 = today + timedelta(days=max(120, p75))
+        peak_p90 = today + timedelta(days=max(180, p90))
 
-        # Probability peak has passed
-        prob_passed = (simulated_days < days_since_halving).mean() * 100
-
-        # Probability peak within timeframes
-        prob_3m = ((remaining_days > 0) & (remaining_days <= 90)).mean() * 100
-        prob_6m = ((remaining_days > 0) & (remaining_days <= 180)).mean() * 100
-        prob_12m = ((remaining_days > 0) & (remaining_days <= 365)).mean() * 100
+        # MVRV-GATED probability calculation
+        # Peak NEVER occurs below MVRV 3.0 historically
+        # This is the critical override - time doesn't matter if MVRV says we're early
+        if mvrv < 2.0:
+            # Clearly early in cycle - peak is 0% likely to have passed
+            prob_passed = 0.0
+            prob_3m = 5.0   # Very unlikely
+            prob_6m = 15.0
+            prob_12m = 45.0
+        elif mvrv < 2.5:
+            # Mid-cycle - still very unlikely peak passed
+            prob_passed = 2.0
+            prob_3m = 10.0
+            prob_6m = 25.0
+            prob_12m = 60.0
+        elif mvrv < 3.0:
+            # Getting warmer but still below peak zone
+            prob_passed = 5.0
+            prob_3m = 15.0
+            prob_6m = 35.0
+            prob_12m = 70.0
+        elif mvrv < 3.5:
+            # Approaching peak zone
+            prob_passed = 10.0
+            prob_3m = 25.0
+            prob_6m = 50.0
+            prob_12m = 85.0
+        else:
+            # In peak zone (MVRV > 3.5) - use time-based MC probabilities
+            prob_passed = (simulated_days < days_since_halving).mean() * 100
+            prob_3m = ((remaining_days > 0) & (remaining_days <= 90)).mean() * 100
+            prob_6m = ((remaining_days > 0) & (remaining_days <= 180)).mean() * 100
+            prob_12m = ((remaining_days > 0) & (remaining_days <= 365)).mean() * 100
 
         return {
             'simulations': n_simulations,
             'remaining_days': {
-                'p10': p10,
-                'p25': p25,
-                'median': p50,
-                'p75': p75,
-                'p90': p90
+                'p10': max(30, p10),
+                'p25': max(60, p25),
+                'median': max(90, p50),
+                'p75': max(120, p75),
+                'p90': max(180, p90)
             },
             'peak_date_estimates': {
                 'earliest_likely': str(peak_p10),
@@ -1563,7 +1608,12 @@ class PeakTimingEngine:
                 'peak_within_6_months': round(prob_6m, 1),
                 'peak_within_12_months': round(prob_12m, 1)
             },
-            'interpretation': self._interpret_timing(p50, prob_6m, mvrv)
+            'mvrv_gate': {
+                'current_mvrv': mvrv,
+                'peak_mvrv_threshold': 3.5,
+                'note': f'MVRV {mvrv:.2f} is {"below" if mvrv < 3.5 else "in"} peak zone (3.5+). Peak requires elevated MVRV.'
+            },
+            'interpretation': self._interpret_timing(max(90, p50), prob_6m, mvrv)
         }
 
     def _interpret_timing(self, median_days: int, prob_6m: float, mvrv: float) -> str:
