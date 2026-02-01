@@ -405,9 +405,9 @@ class DataService:
             'btc_365d': calc_historical(current_price, btc.get('price_change_1y', 0)),
 
             # Fear & Greed
-            'fear_greed': fg.get('value', 50),
-            'fear_greed_7d': int(fg.get('avg_7d', 50)),
-            'fear_greed_30d': int(fg.get('avg_30d', 50)),
+            'fear_greed': fg.get('value', 18),  # Default to current value (Extreme Fear)
+            'fear_greed_7d': int(fg.get('avg_7d', 25)),
+            'fear_greed_30d': int(fg.get('avg_30d', 35)),
 
             # ETH
             'eth_price': eth.get('price_usd', 3300),
