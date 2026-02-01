@@ -2057,6 +2057,7 @@ class PowerLawLPPLEngine:
             zone_desc = 'Above corridor - bubble conditions possible'
 
         return {
+            'fair_value': int(fair_value_median),  # Primary fair value reference
             'fair_value_support': int(fair_value_support),
             'fair_value_median': int(fair_value_median),
             'fair_value_upper': int(fair_value_upper),

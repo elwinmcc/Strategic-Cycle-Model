@@ -1651,25 +1651,6 @@ body {
     margin-bottom: var(--space-md);
 }
 
-.no-2025-bubble {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-sm) var(--space-md);
-    background: rgba(63, 185, 80, 0.15);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--accent-green);
-}
-
-.no-2025-bubble .bubble-icon {
-    font-size: 1rem;
-}
-
-.no-2025-bubble .bubble-text {
-    font-size: 0.8rem;
-    color: var(--accent-green);
-    font-weight: 500;
-}
 
 @media (max-width: 768px) {
     .lppl-grid {

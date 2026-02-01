@@ -740,16 +740,6 @@ function updatePeakTiming(data) {
         plPercentileEl.textContent = (plData.percentile_in_corridor || 0).toFixed(0) + '%';
     }
 
-    // No 2025 bubble indicator
-    const no2025El = document.getElementById('no-2025-bubble');
-    if (no2025El) {
-        const noBubble = lpplIntegration.no_2025_bubble;
-        if (noBubble) {
-            no2025El.style.display = 'flex';
-        } else {
-            no2025El.style.display = 'none';
-        }
-    }
 }
 
 // Risk Management updates
