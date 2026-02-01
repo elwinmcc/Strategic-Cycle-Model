@@ -70,6 +70,7 @@ function updateDashboard(data) {
     // v7.1 Enhanced Sections
     updateCycleIntelligence(data);
     updateScenarios(data);
+    updatePeakTiming(data);
     updateRiskManagement(data);
     updateTradeLevels(data);
     updateWatchlist(data);
@@ -554,6 +555,99 @@ function updateScenarios(data) {
         formatCurrency(expected.expected_price_12m || 0);
     document.getElementById('expected-return').textContent =
         '(' + formatPercent(expected.expected_return_pct || 0) + ')';
+}
+
+// Peak Timing Forecast updates
+function updatePeakTiming(data) {
+    const peak = data.peak_timing || {};
+    const composite = peak.composite_forecast || {};
+    const mc = peak.monte_carlo_timing || {};
+    const probs = mc.probabilities || {};
+    const prices = peak.peak_price_estimates || {};
+    const priceScenarios = prices.peak_scenarios || {};
+    const historical = peak.historical_patterns || {};
+    const current = peak.current_cycle || {};
+
+    // Main forecast
+    const peakDateEl = document.getElementById('peak-date');
+    if (peakDateEl) {
+        peakDateEl.textContent = composite.peak_date_est || '--';
+    }
+
+    const peakQuarterEl = document.getElementById('peak-quarter');
+    if (peakQuarterEl) {
+        peakQuarterEl.textContent = composite.peak_quarter || '--';
+    }
+
+    const peakConfEl = document.getElementById('peak-confidence');
+    if (peakConfEl) {
+        const confidence = composite.confidence || '--';
+        peakConfEl.textContent = confidence;
+        peakConfEl.className = 'conf-value ' + confidence.toLowerCase().replace(' ', '-');
+    }
+
+    const daysEl = document.getElementById('days-to-peak');
+    if (daysEl) {
+        daysEl.textContent = composite.days_to_peak_est || '--';
+    }
+
+    // Probabilities
+    document.getElementById('prob-peak-3m').textContent =
+        (probs.peak_within_3_months || 0).toFixed(0) + '%';
+    document.getElementById('prob-peak-6m').textContent =
+        (probs.peak_within_6_months || 0).toFixed(0) + '%';
+    document.getElementById('prob-peak-12m').textContent =
+        (probs.peak_within_12_months || 0).toFixed(0) + '%';
+    document.getElementById('prob-peak-passed').textContent =
+        (probs.peak_already_passed || 0).toFixed(0) + '%';
+
+    // Price targets
+    const conservative = priceScenarios.conservative || {};
+    const base = priceScenarios.base_case || {};
+    const optimistic = priceScenarios.optimistic || {};
+
+    document.getElementById('peak-price-conservative').textContent =
+        formatCurrency(conservative.price_target || 0);
+    document.getElementById('peak-mvrv-conservative').textContent =
+        'MVRV ' + (conservative.mvrv_target || 0);
+
+    document.getElementById('peak-price-base').textContent =
+        formatCurrency(base.price_target || 0);
+    document.getElementById('peak-mvrv-base').textContent =
+        'MVRV ' + (base.mvrv_target || 0);
+
+    document.getElementById('peak-price-optimistic').textContent =
+        formatCurrency(optimistic.price_target || 0);
+    document.getElementById('peak-mvrv-optimistic').textContent =
+        'MVRV ' + (optimistic.mvrv_target || 0);
+
+    // Recommendation
+    document.getElementById('peak-recommendation').textContent =
+        composite.recommendation || 'Loading...';
+
+    // Progress bars
+    const halvingProgress = historical.from_halving?.progress_pct || 0;
+    const bottomProgress = historical.from_bottom?.progress_pct || 0;
+
+    const halvingFill = document.getElementById('halving-progress-fill');
+    if (halvingFill) {
+        halvingFill.style.width = Math.min(100, halvingProgress) + '%';
+    }
+    document.getElementById('halving-progress').textContent =
+        halvingProgress.toFixed(0) + '%';
+
+    const bottomFill = document.getElementById('bottom-progress-fill');
+    if (bottomFill) {
+        bottomFill.style.width = Math.min(100, bottomProgress) + '%';
+    }
+    document.getElementById('bottom-progress').textContent =
+        bottomProgress.toFixed(0) + '%';
+
+    // Cycle stats
+    document.getElementById('days-since-halving').textContent =
+        (current.days_since_halving || 0) + ' days since halving';
+    document.getElementById('days-since-bottom').textContent =
+        (current.days_since_bottom || 0) + ' days since bottom';
 }
 
 // Risk Management updates

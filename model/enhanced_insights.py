@@ -1339,3 +1339,450 @@ class WatchlistEngine:
         ])
 
         return flags
+
+
+# =============================================================================
+# PEAK TIMING FORECAST ENGINE
+# =============================================================================
+
+class PeakTimingEngine:
+    """
+    Forecasts cycle peak timing using historical patterns, current phase,
+    and Monte Carlo simulation.
+    """
+
+    # Historical cycle data
+    CYCLE_HISTORY = {
+        'cycle_1': {
+            'halving': '2012-11-28',
+            'bottom': '2011-11-18',
+            'peak': '2013-11-29',
+            'days_halving_to_peak': 366,
+            'days_bottom_to_peak': 742,
+            'peak_mvrv': 5.8
+        },
+        'cycle_2': {
+            'halving': '2016-07-09',
+            'bottom': '2015-01-14',
+            'peak': '2017-12-17',
+            'days_halving_to_peak': 526,
+            'days_bottom_to_peak': 1068,
+            'peak_mvrv': 4.7
+        },
+        'cycle_3': {
+            'halving': '2020-05-11',
+            'bottom': '2018-12-15',
+            'peak': '2021-11-10',
+            'days_halving_to_peak': 548,
+            'days_bottom_to_peak': 1060,
+            'peak_mvrv': 3.9
+        },
+        'cycle_4': {
+            'halving': '2024-04-20',
+            'bottom': '2022-11-21',
+            'peak': None,  # TBD
+            'days_halving_to_peak': None,
+            'days_bottom_to_peak': None,
+            'peak_mvrv': None
+        }
+    }
+
+    def analyze(self, phase: str, mvrv: float, cycle_progress: float,
+                price: float, fear_greed: int, liquidity_score: float) -> Dict:
+        """Generate peak timing forecast"""
+
+        # Current cycle reference dates
+        halving_date = date(2024, 4, 20)
+        cycle_bottom = date(2022, 11, 21)
+        today = date.today()
+
+        days_since_halving = (today - halving_date).days
+        days_since_bottom = (today - cycle_bottom).days
+
+        # Historical pattern analysis
+        historical_analysis = self._analyze_historical_patterns(days_since_halving, days_since_bottom)
+
+        # Monte Carlo peak timing simulation
+        monte_carlo = self._monte_carlo_peak_timing(
+            days_since_halving, days_since_bottom, mvrv, cycle_progress
+        )
+
+        # Phase-based timeline
+        phase_timeline = self._phase_based_timeline(phase, mvrv, cycle_progress)
+
+        # Composite forecast
+        composite = self._composite_forecast(historical_analysis, monte_carlo, phase_timeline, mvrv)
+
+        # Peak price estimates
+        price_targets = self._estimate_peak_prices(price, mvrv, monte_carlo)
+
+        return {
+            'current_cycle': {
+                'halving_date': str(halving_date),
+                'cycle_bottom': str(cycle_bottom),
+                'days_since_halving': days_since_halving,
+                'days_since_bottom': days_since_bottom,
+                'current_mvrv': mvrv,
+                'cycle_progress_pct': cycle_progress
+            },
+            'historical_patterns': historical_analysis,
+            'monte_carlo_timing': monte_carlo,
+            'phase_based_timeline': phase_timeline,
+            'composite_forecast': composite,
+            'peak_price_estimates': price_targets,
+            'confidence_factors': self._confidence_factors(mvrv, fear_greed, liquidity_score),
+            'key_dates_to_watch': self._key_dates()
+        }
+
+    def _analyze_historical_patterns(self, days_since_halving: int, days_since_bottom: int) -> Dict:
+        """Analyze historical cycle patterns"""
+
+        # Average days from halving to peak (cycles 1-3)
+        avg_halving_to_peak = (366 + 526 + 548) / 3  # ~480 days
+        std_halving_to_peak = 98  # Standard deviation
+
+        # Average days from bottom to peak
+        avg_bottom_to_peak = (742 + 1068 + 1060) / 3  # ~957 days
+        std_bottom_to_peak = 186
+
+        # Project peak dates
+        halving_date = date(2024, 4, 20)
+        bottom_date = date(2022, 11, 21)
+
+        # Based on halving
+        peak_from_halving_early = halving_date + timedelta(days=int(avg_halving_to_peak - std_halving_to_peak))
+        peak_from_halving_mid = halving_date + timedelta(days=int(avg_halving_to_peak))
+        peak_from_halving_late = halving_date + timedelta(days=int(avg_halving_to_peak + std_halving_to_peak))
+
+        # Based on bottom
+        peak_from_bottom_early = bottom_date + timedelta(days=int(avg_bottom_to_peak - std_bottom_to_peak))
+        peak_from_bottom_mid = bottom_date + timedelta(days=int(avg_bottom_to_peak))
+        peak_from_bottom_late = bottom_date + timedelta(days=int(avg_bottom_to_peak + std_bottom_to_peak))
+
+        # Progress based on halving
+        halving_progress = (days_since_halving / avg_halving_to_peak) * 100
+        bottom_progress = (days_since_bottom / avg_bottom_to_peak) * 100
+
+        return {
+            'from_halving': {
+                'avg_days': int(avg_halving_to_peak),
+                'current_days': days_since_halving,
+                'progress_pct': round(min(100, halving_progress), 1),
+                'remaining_days_est': max(0, int(avg_halving_to_peak - days_since_halving)),
+                'peak_window': {
+                    'early': str(peak_from_halving_early),
+                    'mid': str(peak_from_halving_mid),
+                    'late': str(peak_from_halving_late)
+                }
+            },
+            'from_bottom': {
+                'avg_days': int(avg_bottom_to_peak),
+                'current_days': days_since_bottom,
+                'progress_pct': round(min(100, bottom_progress), 1),
+                'remaining_days_est': max(0, int(avg_bottom_to_peak - days_since_bottom)),
+                'peak_window': {
+                    'early': str(peak_from_bottom_early),
+                    'mid': str(peak_from_bottom_mid),
+                    'late': str(peak_from_bottom_late)
+                }
+            },
+            'cycle_comparison': [
+                {'cycle': 1, 'halving_to_peak': 366, 'bottom_to_peak': 742, 'peak_mvrv': 5.8},
+                {'cycle': 2, 'halving_to_peak': 526, 'bottom_to_peak': 1068, 'peak_mvrv': 4.7},
+                {'cycle': 3, 'halving_to_peak': 548, 'bottom_to_peak': 1060, 'peak_mvrv': 3.9},
+            ],
+            'pattern_note': 'Cycles lengthening: 366 → 526 → 548 days from halving. Peak MVRV declining: 5.8 → 4.7 → 3.9'
+        }
+
+    def _monte_carlo_peak_timing(self, days_since_halving: int, days_since_bottom: int,
+                                  mvrv: float, cycle_progress: float) -> Dict:
+        """Monte Carlo simulation for peak timing"""
+
+        n_simulations = 10000
+
+        # Historical parameters (from halving)
+        mean_days = 480
+        std_days = 100
+
+        # Adjust based on cycle lengthening trend (+20 days per cycle)
+        adjusted_mean = mean_days + 40  # Cycle 4 adjustment
+        adjusted_std = std_days
+
+        # Run simulation
+        np.random.seed(42)  # Reproducible
+        simulated_days = np.random.normal(adjusted_mean, adjusted_std, n_simulations)
+        simulated_days = np.clip(simulated_days, 300, 800)  # Realistic bounds
+
+        # Calculate remaining days
+        remaining_days = simulated_days - days_since_halving
+        remaining_days = np.clip(remaining_days, 0, 600)
+
+        # Calculate percentiles
+        p10 = int(np.percentile(remaining_days, 10))
+        p25 = int(np.percentile(remaining_days, 25))
+        p50 = int(np.percentile(remaining_days, 50))
+        p75 = int(np.percentile(remaining_days, 75))
+        p90 = int(np.percentile(remaining_days, 90))
+
+        today = date.today()
+
+        # Peak date estimates
+        peak_p10 = today + timedelta(days=p10)
+        peak_p25 = today + timedelta(days=p25)
+        peak_p50 = today + timedelta(days=p50)
+        peak_p75 = today + timedelta(days=p75)
+        peak_p90 = today + timedelta(days=p90)
+
+        # Probability peak has passed
+        prob_passed = (simulated_days < days_since_halving).mean() * 100
+
+        # Probability peak within timeframes
+        prob_3m = ((remaining_days > 0) & (remaining_days <= 90)).mean() * 100
+        prob_6m = ((remaining_days > 0) & (remaining_days <= 180)).mean() * 100
+        prob_12m = ((remaining_days > 0) & (remaining_days <= 365)).mean() * 100
+
+        return {
+            'simulations': n_simulations,
+            'remaining_days': {
+                'p10': p10,
+                'p25': p25,
+                'median': p50,
+                'p75': p75,
+                'p90': p90
+            },
+            'peak_date_estimates': {
+                'earliest_likely': str(peak_p10),
+                'early': str(peak_p25),
+                'most_likely': str(peak_p50),
+                'late': str(peak_p75),
+                'latest_likely': str(peak_p90)
+            },
+            'probabilities': {
+                'peak_already_passed': round(prob_passed, 1),
+                'peak_within_3_months': round(prob_3m, 1),
+                'peak_within_6_months': round(prob_6m, 1),
+                'peak_within_12_months': round(prob_12m, 1)
+            },
+            'interpretation': self._interpret_timing(p50, prob_6m, mvrv)
+        }
+
+    def _interpret_timing(self, median_days: int, prob_6m: float, mvrv: float) -> str:
+        """Interpret Monte Carlo timing results"""
+
+        if median_days < 60:
+            timing = "IMMINENT"
+            urgency = "Peak likely within 2 months. Distribution phase critical."
+        elif median_days < 120:
+            timing = "NEAR-TERM"
+            urgency = "Peak likely within 4 months. Begin scaling out."
+        elif median_days < 240:
+            timing = "MID-TERM"
+            urgency = "Peak likely within 8 months. Prepare exit strategy."
+        elif median_days < 365:
+            timing = "EXTENDED"
+            urgency = "Peak likely within 12 months. Still time to accumulate."
+        else:
+            timing = "DISTANT"
+            urgency = "Peak likely 12+ months away. Accumulation zone."
+
+        mvrv_context = ""
+        if mvrv < 2.0:
+            mvrv_context = f" MVRV {mvrv:.2f} confirms we're early - room for significant upside."
+        elif mvrv < 3.0:
+            mvrv_context = f" MVRV {mvrv:.2f} shows fair value - balanced risk/reward."
+        else:
+            mvrv_context = f" MVRV {mvrv:.2f} elevated - timing for exits more important."
+
+        return f"{timing}: {urgency}{mvrv_context}"
+
+    def _phase_based_timeline(self, phase: str, mvrv: float, progress: float) -> Dict:
+        """Timeline based on current phase"""
+
+        phase_durations = {
+            'CAPITULATION': {'to_accumulation': (1, 3), 'to_peak': (24, 36)},
+            'ACCUMULATION': {'to_early_markup': (3, 9), 'to_peak': (18, 30)},
+            'EARLY_MARKUP': {'to_mid_markup': (3, 6), 'to_peak': (12, 24)},
+            'MID_MARKUP': {'to_late_markup': (4, 8), 'to_peak': (6, 15)},
+            'LATE_MARKUP': {'to_distribution': (1, 3), 'to_peak': (0, 4)},
+            'DISTRIBUTION': {'to_bear': (1, 3), 'to_peak': (0, 1)},
+            'EARLY_MARKDOWN': {'to_bottom': (8, 14), 'to_peak': (30, 42)},
+            'MID_MARKDOWN': {'to_bottom': (2, 8), 'to_peak': (26, 38)}
+        }
+
+        timing = phase_durations.get(phase, {'to_peak': (12, 24)})
+        min_months, max_months = timing.get('to_peak', (12, 24))
+
+        today = date.today()
+        peak_earliest = today + timedelta(days=min_months * 30)
+        peak_latest = today + timedelta(days=max_months * 30)
+        peak_mid = today + timedelta(days=((min_months + max_months) / 2) * 30)
+
+        return {
+            'current_phase': phase,
+            'months_to_peak': {
+                'min': min_months,
+                'max': max_months,
+                'mid': (min_months + max_months) / 2
+            },
+            'peak_window': {
+                'earliest': str(peak_earliest),
+                'most_likely': str(peak_mid),
+                'latest': str(peak_latest)
+            },
+            'phase_interpretation': self._phase_to_timing_text(phase, min_months, max_months)
+        }
+
+    def _phase_to_timing_text(self, phase: str, min_m: int, max_m: int) -> str:
+        """Convert phase to timing interpretation"""
+
+        interpretations = {
+            'CAPITULATION': f"At cycle bottom. Peak typically {min_m}-{max_m} months away. Maximum accumulation window.",
+            'ACCUMULATION': f"Recovery phase. Peak typically {min_m}-{max_m} months away. Continue building position.",
+            'EARLY_MARKUP': f"Bull market confirmed. Peak typically {min_m}-{max_m} months away. Hold and add dips.",
+            'MID_MARKUP': f"Bull running strong. Peak typically {min_m}-{max_m} months away. Start planning exits.",
+            'LATE_MARKUP': f"Approaching peak zone. Peak likely within {min_m}-{max_m} months. Active distribution recommended.",
+            'DISTRIBUTION': f"At or near peak. Peak may be NOW or within {min_m}-{max_m} months. Complete exits.",
+            'EARLY_MARKDOWN': f"Bear market started. Next peak {min_m}-{max_m} months away. Preserve capital.",
+            'MID_MARKDOWN': f"Deep bear market. Next peak {min_m}-{max_m} months away. Prepare for accumulation."
+        }
+
+        return interpretations.get(phase, f"Peak estimated {min_m}-{max_m} months away.")
+
+    def _composite_forecast(self, historical: Dict, mc: Dict, phase: Dict, mvrv: float) -> Dict:
+        """Combine all methods into composite forecast"""
+
+        # Weight the different methods
+        # Historical: 30%, Monte Carlo: 40%, Phase-based: 30%
+
+        hist_mid_days = historical['from_halving']['remaining_days_est']
+        mc_mid_days = mc['remaining_days']['median']
+        phase_mid_days = phase['months_to_peak']['mid'] * 30
+
+        # Weighted average
+        composite_days = int(hist_mid_days * 0.30 + mc_mid_days * 0.40 + phase_mid_days * 0.30)
+
+        # Confidence adjustment based on MVRV
+        if mvrv < 1.5:
+            confidence = 'LOW'
+            note = 'Early in cycle - high uncertainty on timing'
+        elif mvrv < 2.5:
+            confidence = 'MEDIUM'
+            note = 'Mid-cycle - moderate timing confidence'
+        elif mvrv < 4.0:
+            confidence = 'HIGH'
+            note = 'Late cycle - higher confidence on peak proximity'
+        else:
+            confidence = 'VERY HIGH'
+            note = 'Extended valuation - peak likely imminent'
+
+        today = date.today()
+        composite_peak = today + timedelta(days=composite_days)
+
+        # Determine quarter
+        peak_quarter = f"Q{(composite_peak.month - 1) // 3 + 1} {composite_peak.year}"
+
+        return {
+            'days_to_peak_est': composite_days,
+            'peak_date_est': str(composite_peak),
+            'peak_quarter': peak_quarter,
+            'confidence': confidence,
+            'confidence_note': note,
+            'methodology': 'Weighted: 30% historical patterns, 40% Monte Carlo, 30% phase-based',
+            'recommendation': self._timing_recommendation(composite_days, mvrv, phase['current_phase'])
+        }
+
+    def _timing_recommendation(self, days: int, mvrv: float, phase: str) -> str:
+        """Generate timing-based recommendation"""
+
+        if days < 90 and mvrv > 3.0:
+            return "URGENT: Peak likely within 3 months. Prioritize distribution. Don't wait for the top."
+        elif days < 180 and mvrv > 2.5:
+            return "ACTIVE DISTRIBUTION: Peak within 6 months. Scale out 50%+ of position."
+        elif days < 365 and mvrv > 2.0:
+            return "PREPARE EXITS: Peak within 12 months. Create exit plan, start small profit-taking."
+        elif days < 365 and mvrv < 2.0:
+            return "ACCUMULATE: Still early. Peak 6-12 months away. Buy dips aggressively."
+        else:
+            return "PATIENT ACCUMULATION: Peak likely 12+ months away. DCA and hold conviction."
+
+    def _estimate_peak_prices(self, current_price: float, mvrv: float, mc: Dict) -> Dict:
+        """Estimate peak prices based on MVRV targets"""
+
+        # Historical peak MVRVs: 5.8 → 4.7 → 3.9 (declining)
+        # Estimate cycle 4 peak MVRV: 3.2 - 4.0
+
+        # Current realized price approximation
+        realized_price = current_price / mvrv if mvrv > 0 else current_price
+
+        # Peak MVRV scenarios
+        conservative_mvrv = 3.0
+        base_mvrv = 3.5
+        optimistic_mvrv = 4.2
+
+        return {
+            'current_price': int(current_price),
+            'estimated_realized_price': int(realized_price),
+            'peak_scenarios': {
+                'conservative': {
+                    'mvrv_target': conservative_mvrv,
+                    'price_target': int(realized_price * conservative_mvrv),
+                    'upside_pct': round((realized_price * conservative_mvrv / current_price - 1) * 100, 0)
+                },
+                'base_case': {
+                    'mvrv_target': base_mvrv,
+                    'price_target': int(realized_price * base_mvrv),
+                    'upside_pct': round((realized_price * base_mvrv / current_price - 1) * 100, 0)
+                },
+                'optimistic': {
+                    'mvrv_target': optimistic_mvrv,
+                    'price_target': int(realized_price * optimistic_mvrv),
+                    'upside_pct': round((realized_price * optimistic_mvrv / current_price - 1) * 100, 0)
+                }
+            },
+            'note': 'Peak MVRV declining each cycle: 5.8 → 4.7 → 3.9. Expect 3.0-4.0 for cycle 4.'
+        }
+
+    def _confidence_factors(self, mvrv: float, fg: int, liq_score: float) -> Dict:
+        """Factors affecting forecast confidence"""
+
+        factors = []
+
+        # MVRV clarity
+        if mvrv < 1.5:
+            factors.append({'factor': 'MVRV', 'impact': 'LOW CONFIDENCE', 'reason': 'Early cycle - wide range of outcomes'})
+        elif mvrv < 2.5:
+            factors.append({'factor': 'MVRV', 'impact': 'MODERATE', 'reason': 'Mid-cycle - timing still uncertain'})
+        elif mvrv < 4.0:
+            factors.append({'factor': 'MVRV', 'impact': 'HIGH CONFIDENCE', 'reason': 'Extended - peak window narrowing'})
+        else:
+            factors.append({'factor': 'MVRV', 'impact': 'VERY HIGH', 'reason': 'Euphoria zone - peak imminent'})
+
+        # Sentiment
+        if fg < 25:
+            factors.append({'factor': 'Sentiment', 'impact': 'BULLISH', 'reason': 'Extreme fear - likely not at top'})
+        elif fg > 75:
+            factors.append({'factor': 'Sentiment', 'impact': 'BEARISH', 'reason': 'Extreme greed - top may be near'})
+        else:
+            factors.append({'factor': 'Sentiment', 'impact': 'NEUTRAL', 'reason': 'Mixed sentiment'})
+
+        # Liquidity
+        if liq_score > 60:
+            factors.append({'factor': 'Liquidity', 'impact': 'SUPPORTIVE', 'reason': 'Strong liquidity - can extend cycle'})
+        elif liq_score < 40:
+            factors.append({'factor': 'Liquidity', 'impact': 'HEADWIND', 'reason': 'Weak liquidity - may shorten cycle'})
+
+        return {
+            'factors': factors,
+            'overall_confidence': 'HIGH' if mvrv > 2.5 else 'MODERATE' if mvrv > 1.5 else 'LOW'
+        }
+
+    def _key_dates(self) -> List[Dict]:
+        """Key dates to watch"""
+
+        return [
+            {'date': '2024-04-20', 'event': 'Bitcoin Halving', 'status': 'COMPLETED', 'impact': 'Supply shock initiated'},
+            {'date': '2025-Q1', 'event': 'Post-halving acceleration', 'status': 'CURRENT', 'impact': 'Historical parabolic phase'},
+            {'date': '2025-Q2/Q3', 'event': 'Potential early peak window', 'status': 'UPCOMING', 'impact': 'Watch for distribution signals'},
+            {'date': '2025-Q4', 'event': 'Historical peak window', 'status': 'UPCOMING', 'impact': 'Most likely peak zone based on patterns'},
+            {'date': '2026-Q1', 'event': 'Extended peak window', 'status': 'UPCOMING', 'impact': 'If cycle lengthening continues'}
+        ]

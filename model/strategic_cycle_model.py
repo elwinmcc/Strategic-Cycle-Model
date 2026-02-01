@@ -1289,13 +1289,15 @@ class StrategicCycleModel:
             ScenarioEngine,
             RiskManagementEngine,
             TradeLevelsEngine,
-            WatchlistEngine
+            WatchlistEngine,
+            PeakTimingEngine
         )
         self.cycle_intelligence = CycleIntelligenceEngine()
         self.scenarios = ScenarioEngine()
         self.risk_mgmt = RiskManagementEngine()
         self.trade_levels = TradeLevelsEngine()
         self.watchlist = WatchlistEngine()
+        self.peak_timing = PeakTimingEngine()
 
     def _calculate_composite_score(self, mvrv: float, liquidity: Dict,
                                     trends: Dict, business_cycle: Dict,
@@ -1523,6 +1525,16 @@ class StrategicCycleModel:
             fear_greed=d.fear_greed
         )
 
+        # Peak Timing Forecast
+        peak_timing_forecast = self.peak_timing.analyze(
+            phase=phase_result['phase'],
+            mvrv=d.mvrv,
+            cycle_progress=phase_result['cycle_progress'],
+            price=d.btc_price,
+            fear_greed=d.fear_greed,
+            liquidity_score=liq['score']
+        )
+
         # Compile result
         result = {
             'meta': {
@@ -1546,7 +1558,8 @@ class StrategicCycleModel:
             'risk_management': risk_analysis,
             'trade_levels': trade_levels_analysis,
             'watchlist': watchlist_items,
-            'composite_score': composite_score
+            'composite_score': composite_score,
+            'peak_timing': peak_timing_forecast
         }
 
         # Generate thesis

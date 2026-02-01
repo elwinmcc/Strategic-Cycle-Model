@@ -445,6 +445,98 @@
             </div>
         </section>
 
+        <!-- Peak Timing Forecast Section -->
+        <section class="insight-section" id="peak-timing-section">
+            <div class="insight-header">
+                <h2>🎯 Cycle Peak Forecast</h2>
+                <span class="insight-subtitle">Monte Carlo Simulation & Historical Pattern Analysis</span>
+            </div>
+            <div class="peak-timing-content">
+                <div class="peak-main-forecast">
+                    <div class="peak-estimate">
+                        <span class="peak-label">Estimated Peak</span>
+                        <span class="peak-date" id="peak-date">--</span>
+                        <span class="peak-quarter" id="peak-quarter">--</span>
+                    </div>
+                    <div class="peak-confidence">
+                        <span class="conf-label">Confidence</span>
+                        <span class="conf-value" id="peak-confidence">--</span>
+                    </div>
+                    <div class="days-remaining">
+                        <span class="days-label">Days to Peak (est)</span>
+                        <span class="days-value" id="days-to-peak">--</span>
+                    </div>
+                </div>
+
+                <div class="peak-probabilities">
+                    <h3>Peak Probability Windows</h3>
+                    <div class="prob-grid">
+                        <div class="prob-item">
+                            <span class="prob-label">Within 3 Months</span>
+                            <span class="prob-value" id="prob-peak-3m">--%</span>
+                        </div>
+                        <div class="prob-item">
+                            <span class="prob-label">Within 6 Months</span>
+                            <span class="prob-value" id="prob-peak-6m">--%</span>
+                        </div>
+                        <div class="prob-item">
+                            <span class="prob-label">Within 12 Months</span>
+                            <span class="prob-value" id="prob-peak-12m">--%</span>
+                        </div>
+                        <div class="prob-item">
+                            <span class="prob-label">Already Passed</span>
+                            <span class="prob-value" id="prob-peak-passed">--%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="peak-price-targets">
+                    <h3>Peak Price Estimates</h3>
+                    <div class="price-target-grid">
+                        <div class="price-target conservative">
+                            <span class="target-label">Conservative</span>
+                            <span class="target-price" id="peak-price-conservative">$--</span>
+                            <span class="target-mvrv" id="peak-mvrv-conservative">MVRV --</span>
+                        </div>
+                        <div class="price-target base">
+                            <span class="target-label">Base Case</span>
+                            <span class="target-price" id="peak-price-base">$--</span>
+                            <span class="target-mvrv" id="peak-mvrv-base">MVRV --</span>
+                        </div>
+                        <div class="price-target optimistic">
+                            <span class="target-label">Optimistic</span>
+                            <span class="target-price" id="peak-price-optimistic">$--</span>
+                            <span class="target-mvrv" id="peak-mvrv-optimistic">MVRV --</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="peak-recommendation" id="peak-recommendation">
+                    Loading peak timing analysis...
+                </div>
+
+                <div class="cycle-progress-tracker">
+                    <h3>Cycle Progress</h3>
+                    <div class="progress-bars">
+                        <div class="progress-item">
+                            <span class="progress-label">From Halving</span>
+                            <div class="progress-bar"><div class="progress-fill" id="halving-progress-fill"></div></div>
+                            <span class="progress-value" id="halving-progress">--%</span>
+                        </div>
+                        <div class="progress-item">
+                            <span class="progress-label">From Bottom</span>
+                            <div class="progress-bar"><div class="progress-fill" id="bottom-progress-fill"></div></div>
+                            <span class="progress-value" id="bottom-progress">--%</span>
+                        </div>
+                    </div>
+                    <div class="cycle-stats">
+                        <span id="days-since-halving">-- days since halving</span>
+                        <span id="days-since-bottom">-- days since bottom</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Risk Management Section -->
         <section class="insight-section" id="risk-section">
             <div class="insight-header">

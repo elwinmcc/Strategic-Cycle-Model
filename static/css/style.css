@@ -1349,6 +1349,225 @@ body {
     color: var(--accent-green);
 }
 
+/* Peak Timing Forecast */
+#peak-timing-section {
+    border: 2px solid var(--accent-purple);
+}
+
+.peak-timing-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+}
+
+.peak-main-forecast {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: var(--space-lg);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    flex-wrap: wrap;
+    gap: var(--space-lg);
+}
+
+.peak-estimate, .peak-confidence, .days-remaining {
+    text-align: center;
+}
+
+.peak-label, .conf-label, .days-label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-bottom: var(--space-xs);
+}
+
+.peak-date {
+    font-family: var(--font-mono);
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--accent-purple);
+}
+
+.peak-quarter {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    color: var(--text-primary);
+}
+
+.conf-value {
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    font-weight: 600;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    background: var(--bg-tertiary);
+}
+
+.conf-value.high, .conf-value.very-high { color: var(--accent-green); }
+.conf-value.moderate, .conf-value.medium { color: var(--accent-yellow); }
+.conf-value.low { color: var(--accent-orange); }
+
+.days-value {
+    font-family: var(--font-mono);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--btc-orange);
+}
+
+.peak-probabilities h3, .peak-price-targets h3, .cycle-progress-tracker h3 {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-bottom: var(--space-md);
+}
+
+.prob-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-md);
+}
+
+.prob-item {
+    text-align: center;
+    padding: var(--space-md);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+}
+
+.prob-item .prob-label {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-xs);
+}
+
+.prob-item .prob-value {
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.price-target-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-md);
+}
+
+.price-target {
+    text-align: center;
+    padding: var(--space-md);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.price-target.conservative { border-color: var(--accent-yellow); }
+.price-target.base { border-color: var(--accent-blue); }
+.price-target.optimistic { border-color: var(--accent-green); }
+
+.target-label {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-bottom: var(--space-xs);
+}
+
+.target-price {
+    font-family: var(--font-mono);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.target-mvrv {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: var(--space-xs);
+}
+
+.peak-recommendation {
+    padding: var(--space-md);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    border-left: 3px solid var(--accent-purple);
+    font-size: 0.9375rem;
+    color: var(--text-primary);
+}
+
+.cycle-progress-tracker {
+    padding: var(--space-md);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+}
+
+.progress-bars {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.progress-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+}
+
+.progress-item .progress-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    min-width: 100px;
+}
+
+.progress-item .progress-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-item .progress-fill {
+    height: 100%;
+    background: var(--accent-purple);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.progress-item .progress-value {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 600;
+    min-width: 50px;
+    text-align: right;
+}
+
+.cycle-stats {
+    display: flex;
+    justify-content: space-around;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+    .prob-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .price-target-grid {
+        grid-template-columns: 1fr;
+    }
+    .peak-main-forecast {
+        flex-direction: column;
+    }
+}
+
 /* Risk Management */
 .risk-grid {
     display: grid;
