@@ -788,29 +788,44 @@ class RiskManagementEngine:
         }
 
     def _drawdown_analysis(self, price: float, mvrv: float) -> Dict:
-        """Analyze potential drawdown scenarios"""
+        """Analyze potential drawdown scenarios and risk/reward"""
 
         # Historical drawdown by MVRV zone
         if mvrv < 1.0:
             typical_dd = 25
             max_dd = 40
             dd_desc = "Limited downside from deep value"
+            downside_risk = 'LOW'
+            upside_potential = 'EXTREME (5-10x)'
+            risk_reward = 'EXCELLENT'
         elif mvrv < 2.0:
             typical_dd = 35
             max_dd = 50
             dd_desc = "Moderate drawdown possible in corrections"
+            downside_risk = 'LOW-MEDIUM'
+            upside_potential = 'HIGH (3-5x)'
+            risk_reward = 'FAVORABLE'
         elif mvrv < 3.0:
             typical_dd = 45
             max_dd = 60
             dd_desc = "Significant drawdown risk in bear market"
+            downside_risk = 'MEDIUM'
+            upside_potential = 'GOOD (2-3x)'
+            risk_reward = 'FAVORABLE'
         elif mvrv < 4.5:
             typical_dd = 55
             max_dd = 70
             dd_desc = "High drawdown risk from extended levels"
+            downside_risk = 'MEDIUM-HIGH'
+            upside_potential = 'LIMITED (1.5-2x)'
+            risk_reward = 'NEUTRAL'
         else:
             typical_dd = 70
             max_dd = 85
             dd_desc = "Severe drawdown risk from euphoria zone"
+            downside_risk = 'HIGH'
+            upside_potential = 'MINIMAL (<1.5x)'
+            risk_reward = 'UNFAVORABLE'
 
         return {
             'typical_drawdown_pct': typical_dd,
@@ -818,7 +833,10 @@ class RiskManagementEngine:
             'description': dd_desc,
             'price_at_typical_dd': int(price * (1 - typical_dd/100)),
             'price_at_max_dd': int(price * (1 - max_dd/100)),
-            'mental_preparation': f"If you buy here, be prepared for price to drop to ${int(price * (1 - typical_dd/100)):,} ({typical_dd}% drawdown) without panicking."
+            'mental_preparation': f"If you buy here, be prepared for price to drop to ${int(price * (1 - typical_dd/100)):,} ({typical_dd}% drawdown) without panicking.",
+            'downside_risk': downside_risk,
+            'upside_potential': upside_potential,
+            'risk_reward_rating': risk_reward
         }
 
     def _calculate_levels(self, price: float, mvrv: float) -> Dict:
@@ -1699,31 +1717,66 @@ class PeakTimingEngine:
         return interpretations.get(phase, f"Peak estimated {min_m}-{max_m} months away.")
 
     def _composite_forecast(self, historical: Dict, mc: Dict, phase: Dict, mvrv: float) -> Dict:
-        """Combine all methods into composite forecast"""
+        """
+        Combine all methods into composite forecast.
 
-        # Weight the different methods
-        # Historical: 30%, Monte Carlo: 40%, Phase-based: 30%
+        CRITICAL: Phase-based timing is most reliable when MVRV is low.
+        When MVRV < 2.0, we KNOW we're early in the cycle regardless of time elapsed.
+        When MVRV > 3.5, we're in peak territory and timing becomes more certain.
 
+        Weight adjustment by MVRV:
+        - MVRV < 2.0: Phase 50%, MC 20%, Historical 30% (phase dominates - we're early)
+        - MVRV 2.0-3.0: Phase 35%, MC 35%, Historical 30% (balanced)
+        - MVRV > 3.0: Phase 20%, MC 50%, Historical 30% (MC/timing dominates - peak zone)
+        """
         hist_mid_days = historical['from_halving']['remaining_days_est']
         mc_mid_days = mc['remaining_days']['median']
         phase_mid_days = phase['months_to_peak']['mid'] * 30
 
-        # Weighted average
-        composite_days = int(hist_mid_days * 0.30 + mc_mid_days * 0.40 + phase_mid_days * 0.30)
-
-        # Confidence adjustment based on MVRV
-        if mvrv < 1.5:
+        # Dynamic weighting based on MVRV
+        if mvrv < 2.0:
+            # Early cycle: trust phase-based more than time-based
+            weight_phase = 0.50
+            weight_mc = 0.20
+            weight_hist = 0.30
             confidence = 'LOW'
-            note = 'Early in cycle - high uncertainty on timing'
-        elif mvrv < 2.5:
+            note = 'Early in cycle - phase-based timing dominates, high uncertainty'
+        elif mvrv < 3.0:
+            # Mid cycle: balanced approach
+            weight_phase = 0.35
+            weight_mc = 0.35
+            weight_hist = 0.30
             confidence = 'MEDIUM'
-            note = 'Mid-cycle - moderate timing confidence'
+            note = 'Mid-cycle - balanced timing approach'
         elif mvrv < 4.0:
+            # Late cycle: timing becomes more important
+            weight_phase = 0.25
+            weight_mc = 0.45
+            weight_hist = 0.30
             confidence = 'HIGH'
-            note = 'Late cycle - higher confidence on peak proximity'
+            note = 'Late cycle - peak approaching, timing more certain'
         else:
+            # Extended: peak imminent
+            weight_phase = 0.20
+            weight_mc = 0.50
+            weight_hist = 0.30
             confidence = 'VERY HIGH'
             note = 'Extended valuation - peak likely imminent'
+
+        # Weighted average
+        composite_days = int(
+            hist_mid_days * weight_hist +
+            mc_mid_days * weight_mc +
+            phase_mid_days * weight_phase
+        )
+
+        # Ensure minimum days based on MVRV (can't peak with MVRV < 3.0)
+        if mvrv < 2.0:
+            composite_days = max(composite_days, 180)  # At least 6 months
+        elif mvrv < 2.5:
+            composite_days = max(composite_days, 120)  # At least 4 months
+        elif mvrv < 3.0:
+            composite_days = max(composite_days, 60)   # At least 2 months
 
         today = date.today()
         composite_peak = today + timedelta(days=composite_days)
@@ -1737,7 +1790,17 @@ class PeakTimingEngine:
             'peak_quarter': peak_quarter,
             'confidence': confidence,
             'confidence_note': note,
-            'methodology': 'Weighted: 30% historical patterns, 40% Monte Carlo, 30% phase-based',
+            'methodology': f'Weighted by MVRV ({mvrv:.2f}): {int(weight_hist*100)}% historical, {int(weight_mc*100)}% Monte Carlo, {int(weight_phase*100)}% phase-based',
+            'weights_used': {
+                'historical': weight_hist,
+                'monte_carlo': weight_mc,
+                'phase_based': weight_phase
+            },
+            'component_estimates': {
+                'historical_days': hist_mid_days,
+                'monte_carlo_days': mc_mid_days,
+                'phase_based_days': int(phase_mid_days)
+            },
             'recommendation': self._timing_recommendation(composite_days, mvrv, phase['current_phase'])
         }
 

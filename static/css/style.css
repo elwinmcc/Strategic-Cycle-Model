@@ -610,6 +610,46 @@ body {
 .alignment-badge.bearish { background: var(--accent-red-dim); color: var(--accent-red); }
 .alignment-badge.mixed { background: var(--accent-yellow-dim); color: var(--accent-yellow); }
 
+/* Fear & Greed Badge */
+.fear-greed-badge {
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.fear-greed-badge.extreme-fear { background: rgba(139, 69, 19, 0.3); color: #cd853f; }
+.fear-greed-badge.fear { background: var(--accent-orange-dim); color: var(--accent-orange); }
+.fear-greed-badge.neutral { background: var(--accent-yellow-dim); color: var(--accent-yellow); }
+.fear-greed-badge.greed { background: rgba(50, 205, 50, 0.2); color: #90ee90; }
+.fear-greed-badge.extreme-greed { background: var(--accent-green-dim); color: var(--accent-green); }
+
+/* Alt Trend Badge */
+.alt-trend-badge {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-left: var(--space-sm);
+}
+
+.alt-trend-badge.bullish, .alt-trend-badge.strong_bullish {
+    background: var(--accent-green-dim);
+    color: var(--accent-green);
+}
+
+.alt-trend-badge.bearish, .alt-trend-badge.strong_bearish {
+    background: var(--accent-red-dim);
+    color: var(--accent-red);
+}
+
+.alt-trend-badge.neutral {
+    background: var(--accent-yellow-dim);
+    color: var(--accent-yellow);
+}
+
 /* Liquidity Score */
 .liq-score {
     margin-top: var(--space-md);

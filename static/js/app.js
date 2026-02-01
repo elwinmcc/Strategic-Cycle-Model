@@ -205,6 +205,34 @@ function updateValuation(data) {
     zoneEl.textContent = zone.replace('_', ' ');
     zoneEl.className = 'metric-value zone-badge ' + zone.toLowerCase().replace('_', '-');
 
+    // Fear & Greed
+    const fearGreedEl = document.getElementById('fear-greed');
+    if (fearGreedEl) {
+        const fg = phase.fear_greed || 0;
+        let fgClass = 'neutral';
+        let fgLabel = fg;
+
+        if (fg <= 20) {
+            fgClass = 'extreme-fear';
+            fgLabel = fg + ' Extreme Fear';
+        } else if (fg <= 40) {
+            fgClass = 'fear';
+            fgLabel = fg + ' Fear';
+        } else if (fg <= 60) {
+            fgClass = 'neutral';
+            fgLabel = fg + ' Neutral';
+        } else if (fg <= 80) {
+            fgClass = 'greed';
+            fgLabel = fg + ' Greed';
+        } else {
+            fgClass = 'extreme-greed';
+            fgLabel = fg + ' Extreme Greed';
+        }
+
+        fearGreedEl.textContent = fgLabel;
+        fearGreedEl.className = 'metric-value fear-greed-badge ' + fgClass;
+    }
+
     // MVRV gauge (scale 0-7 to 0-100%)
     const mvrvPct = Math.min(100, Math.max(0, (mvrv / 7) * 100));
     document.getElementById('mvrv-fill').style.width = mvrvPct + '%';
@@ -370,9 +398,24 @@ function updateAltRotation(data) {
     const allocation = alts.allocation_suggestion || {};
     const meta = data.meta || {};
 
-    // Phase
-    document.getElementById('alt-phase').textContent =
-        (alts.phase || '--').replace('_', ' ');
+    // Phase - use display name if available
+    const phaseEl = document.getElementById('alt-phase');
+    phaseEl.textContent = alts.phase_display || (alts.phase || '--').replace('_', ' ');
+
+    // Alt Trend
+    const altTrendEl = document.getElementById('alt-trend');
+    if (altTrendEl) {
+        const trend = alts.alt_trend || 'NEUTRAL';
+        altTrendEl.textContent = trend;
+        altTrendEl.className = 'alt-trend-badge';
+        if (trend.includes('BULLISH')) {
+            altTrendEl.classList.add('bullish');
+        } else if (trend.includes('BEARISH')) {
+            altTrendEl.classList.add('bearish');
+        } else {
+            altTrendEl.classList.add('neutral');
+        }
+    }
 
     // ETH Price
     const ethPriceEl = document.getElementById('eth-price');
@@ -381,9 +424,10 @@ function updateAltRotation(data) {
         ethPriceEl.textContent = formatCurrency(ethPrice);
     }
 
-    // Metrics
-    document.getElementById('eth-btc').textContent =
-        (ethBtc.value || 0).toFixed(4);
+    // ETH/BTC as percentage
+    const ethBtcPct = alts.eth_btc_pct || ((ethBtc.value || 0) * 100);
+    document.getElementById('eth-btc').textContent = ethBtcPct.toFixed(2) + '%';
+
     document.getElementById('btc-dom').textContent =
         (alts.btc_dominance || 0).toFixed(1) + '%';
 

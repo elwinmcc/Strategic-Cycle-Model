@@ -606,8 +606,34 @@ class AltcoinEngine:
             score += 10
         score = max(0, min(100, score))
 
+        # Calculate overall alt trend
+        alt_trends = [eth_btc['trend'], total3['trend'], others['trend']]
+        bullish_count = sum(1 for t in alt_trends if t in ['UP', 'STRONG_UP'])
+        bearish_count = sum(1 for t in alt_trends if t in ['DOWN', 'STRONG_DOWN'])
+
+        if bullish_count >= 2 and dom_change < 0:
+            overall_alt_trend = 'BULLISH'
+        elif bullish_count == 3:
+            overall_alt_trend = 'STRONG_BULLISH'
+        elif bearish_count >= 2:
+            overall_alt_trend = 'BEARISH'
+        elif bearish_count == 3 and dom_change > 0:
+            overall_alt_trend = 'STRONG_BEARISH'
+        else:
+            overall_alt_trend = 'NEUTRAL'
+
+        # Phase display names
+        phase_display = {
+            'BTC_DOMINANT': 'BTC Dominant',
+            'EARLY_ALT': 'Early Alt Season',
+            'ALT_SEASON': 'Alt Season',
+            'LATE_ALT': 'Late Alt Season',
+            'ROTATION_OUT': 'Rotation to BTC'
+        }
+
         return {
             'eth_btc': eth_btc,
+            'eth_btc_pct': round((d.eth_btc or 0) * 100, 2),  # ETH/BTC as percentage
             'total3_btc': total3,
             'others_btc': others,
             'btc_dominance': d.btc_dominance,
@@ -615,6 +641,8 @@ class AltcoinEngine:
             'others_vs_btc': others.get('mom_30d', 0),  # 30d performance vs BTC
             'eth_vs_btc': eth_btc.get('mom_30d', 0),    # ETH 30d performance vs BTC
             'phase': phase.value,
+            'phase_display': phase_display.get(phase.value, phase.value),
+            'alt_trend': overall_alt_trend,
             'rotation_score': score,
             'allocation_suggestion': self._suggest_allocation(phase, score)
         }
@@ -652,21 +680,61 @@ class AltcoinEngine:
         return ((curr - prior) / prior) * 100
 
     def _determine_phase(self, eth, total3, others, dom_change) -> AltSeason:
+        """
+        Determine alt rotation phase based on relative performance.
+
+        Alt season typically follows this progression:
+        1. BTC_DOMINANT: BTC outperforms, dominance rising, alts down
+        2. EARLY_ALT: ETH starts outperforming BTC, alts catch up
+        3. ALT_SEASON: Both ETH and mid-cap alts outperforming BTC
+        4. LATE_ALT: Small caps pumping hard (euphoria), ETH/mid-caps cooling
+        5. ROTATION_OUT: Dominance rising sharply, risk-off to BTC
+        """
         eth_up = eth['trend'] in ['UP', 'STRONG_UP']
+        eth_strong = eth['trend'] == 'STRONG_UP'
+        eth_down = eth['trend'] in ['DOWN', 'STRONG_DOWN']
         total3_up = total3['trend'] in ['UP', 'STRONG_UP']
         others_up = others['trend'] in ['UP', 'STRONG_UP']
+        others_strong = others['trend'] == 'STRONG_UP'
 
-        if not eth_up and not total3_up and dom_change and dom_change > 0:
+        # Get momentum values for more nuanced analysis
+        eth_mom = eth.get('momentum', 0)
+        total3_mom = total3.get('momentum', 0)
+        others_mom = others.get('momentum', 0)
+
+        # BTC Dominant: All alts underperforming, dominance rising
+        if not eth_up and not total3_up and not others_up:
             return AltSeason.BTC_DOMINANT
-        elif eth_up and not total3_up:
-            return AltSeason.EARLY_ALT
-        elif eth_up and total3_up and others_up:
-            return AltSeason.ALT_SEASON
-        elif total3_up and others_up and not eth_up:
-            return AltSeason.LATE_ALT
-        elif dom_change and dom_change > 3:
+
+        # Rotation Out: Sharp rotation back to BTC (dominance rising fast)
+        if dom_change and dom_change > 3 and (eth_down or not eth_up):
             return AltSeason.ROTATION_OUT
-        return AltSeason.EARLY_ALT
+
+        # Early Alt: ETH leading, broader alts not yet moving
+        if eth_up and not total3_up and not others_up:
+            return AltSeason.EARLY_ALT
+
+        # Early Alt: ETH up, some alts starting to move
+        if eth_up and (total3_up or others_up) and not (total3_up and others_up):
+            return AltSeason.EARLY_ALT
+
+        # Full Alt Season: ETH up AND broader alts up
+        if eth_up and total3_up and others_up:
+            # Check if we're in late stage (small caps outpacing)
+            if others_strong and others_mom > eth_mom + 5:
+                return AltSeason.LATE_ALT  # Small caps euphoria
+            return AltSeason.ALT_SEASON
+
+        # Late Alt: Small caps pumping but ETH cooling (end of alt season)
+        if total3_up and others_strong and not eth_strong:
+            if others_mom > 10:  # Strong small cap momentum
+                return AltSeason.LATE_ALT
+
+        # Default to early alt if any alts showing life
+        if total3_up or others_up:
+            return AltSeason.EARLY_ALT
+
+        return AltSeason.BTC_DOMINANT
 
     def _suggest_allocation(self, phase: AltSeason, score: int) -> Dict:
         allocations = {
@@ -691,7 +759,7 @@ class PhaseEngine:
         value_zone, value_details = self._value_zone(d)
 
         # Cycle progress (0-100%)
-        progress = self._cycle_progress(d, liq)
+        progress, progress_details = self._cycle_progress_detailed(d, liq)
 
         # Phase detection
         phase, confidence = self._detect_phase(d, value_zone, progress, trends)
@@ -703,13 +771,15 @@ class PhaseEngine:
             'phase': phase.value,
             'phase_confidence': round(confidence, 1),
             'cycle_progress': round(progress, 1),
+            'cycle_progress_details': progress_details,
             'value_zone': value_zone.value,
             'value_details': value_details,
             'in_buy_zone': value_zone in [ValueZone.DEEP_VALUE, ValueZone.VALUE],
             'in_sell_zone': value_zone in [ValueZone.EXTENDED, ValueZone.EUPHORIA],
             'top_warning': top_warning.value,
             'top_score': top_score,
-            'top_indicators': top_indicators
+            'top_indicators': top_indicators,
+            'fear_greed': d.fear_greed
         }
 
     def _value_zone(self, d: MarketData) -> Tuple[ValueZone, Dict]:
@@ -743,6 +813,21 @@ class PhaseEngine:
         }
 
     def _cycle_progress(self, d: MarketData, liq: Dict) -> float:
+        """Calculate cycle progress (0-100%)."""
+        progress, _ = self._cycle_progress_detailed(d, liq)
+        return progress
+
+    def _cycle_progress_detailed(self, d: MarketData, liq: Dict) -> Tuple[float, Dict]:
+        """
+        Calculate cycle progress (0-100%) with detailed breakdown.
+
+        Components:
+        - MVRV progress (40%): Where MVRV is between historical low (-0.5) and high (6.5)
+        - Price progress (30%): Where price is between cycle low and ATH
+        - Liquidity progress (30%): Current liquidity score
+
+        Returns tuple of (composite percentage, detailed breakdown).
+        """
         # MVRV progress (40%)
         mvrv_pct = (d.mvrv - MVRV_HISTORICAL_LOW) / (MVRV_HISTORICAL_HIGH - MVRV_HISTORICAL_LOW) * 100
         mvrv_pct = max(0, min(100, mvrv_pct))
@@ -755,7 +840,55 @@ class PhaseEngine:
         # Liquidity progress (30%)
         liq_pct = liq.get('score', 50)
 
-        return mvrv_pct * 0.40 + price_pct * 0.30 + liq_pct * 0.30
+        composite = mvrv_pct * 0.40 + price_pct * 0.30 + liq_pct * 0.30
+
+        # Generate explanation
+        if composite < 20:
+            stage = "EARLY CYCLE"
+            explanation = "Deep in accumulation zone. Maximum opportunity, minimum risk."
+        elif composite < 40:
+            stage = "EARLY-MID CYCLE"
+            explanation = "Bull market beginning. Strong accumulation zone with upside ahead."
+        elif composite < 60:
+            stage = "MID CYCLE"
+            explanation = "Bull market in progress. Hold positions, add on dips."
+        elif composite < 75:
+            stage = "MID-LATE CYCLE"
+            explanation = "Approaching mature phase. Start planning exit strategy."
+        elif composite < 90:
+            stage = "LATE CYCLE"
+            explanation = "Peak zone approaching. Active distribution recommended."
+        else:
+            stage = "CYCLE PEAK"
+            explanation = "Maximum risk zone. Distribute remaining holdings."
+
+        details = {
+            'composite_score': round(composite, 1),
+            'stage': stage,
+            'explanation': explanation,
+            'components': {
+                'mvrv': {
+                    'value': round(d.mvrv, 2),
+                    'progress': round(mvrv_pct, 1),
+                    'weight': '40%',
+                    'range': f'{MVRV_HISTORICAL_LOW} to {MVRV_HISTORICAL_HIGH}'
+                },
+                'price': {
+                    'current': d.btc_price,
+                    'cycle_low': d.btc_cycle_low,
+                    'ath': d.btc_ath,
+                    'progress': round(price_pct, 1),
+                    'weight': '30%'
+                },
+                'liquidity': {
+                    'score': round(liq_pct, 1),
+                    'weight': '30%'
+                }
+            },
+            'interpretation': f"MVRV at {d.mvrv:.2f} ({mvrv_pct:.0f}% of range) + Price {price_pct:.0f}% from low to ATH + Liquidity score {liq_pct:.0f} = {composite:.0f}% cycle progress"
+        }
+
+        return composite, details
 
     def _detect_phase(self, d: MarketData, zone: ValueZone, progress: float, trends: Dict) -> Tuple[Phase, float]:
         scores = {p: 0 for p in Phase}
