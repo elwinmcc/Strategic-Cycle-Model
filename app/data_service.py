@@ -104,30 +104,47 @@ class DataService:
             return {}
 
     async def _fetch_fear_greed(self, client: httpx.AsyncClient) -> Dict:
-        """Fetch Fear & Greed Index from multiple sources"""
+        """Fetch Fear & Greed Index from CoinGlass (primary) with fallbacks"""
         cache_key = 'fear_greed'
         if cache_key in cache:
             return cache[cache_key]
 
+        import re
+
+        def classify_fg(value: int) -> str:
+            """Classify Fear & Greed value"""
+            if value <= 20:
+                return 'Extreme Fear'
+            elif value <= 40:
+                return 'Fear'
+            elif value <= 60:
+                return 'Neutral'
+            elif value <= 80:
+                return 'Greed'
+            else:
+                return 'Extreme Greed'
+
         try:
-            # Try CoinMarketCap Fear & Greed first
+            # PRIMARY: CoinGlass Fear & Greed Index
             try:
-                url = "https://coinmarketcap.com/charts/fear-and-greed-index/"
+                url = "https://www.coinglass.com/pro/i/FearGreedIndex"
                 headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
                 }
-                response = await client.get(url, headers=headers, timeout=10.0)
+                response = await client.get(url, headers=headers, timeout=15.0)
                 if response.status_code == 200:
                     html = response.text
-                    import re
 
-                    # Look for fear & greed value in the page
+                    # CoinGlass patterns - look for the index value
                     patterns = [
                         r'"fearGreedIndex"\s*:\s*(\d+)',
+                        r'"index"\s*:\s*(\d+)',
                         r'"value"\s*:\s*(\d+)',
-                        r'fear.*?greed.*?(\d+)',
-                        r'index.*?value.*?(\d+)',
-                        r'data-value["\']?\s*=\s*["\']?(\d+)',
+                        r'class="[^"]*index[^"]*"[^>]*>(\d+)<',
+                        r'>(\d+)</span>\s*</div>\s*<div[^>]*class="[^"]*fear',
+                        r'(\d+)\s*</?\w+>\s*(?:Extreme\s*)?(?:Fear|Greed|Neutral)',
                     ]
 
                     for pattern in patterns:
@@ -135,54 +152,73 @@ class DataService:
                         if match:
                             value = int(match.group(1))
                             if 0 <= value <= 100:
-                                # Determine classification
-                                if value <= 20:
-                                    classification = 'Extreme Fear'
-                                elif value <= 40:
-                                    classification = 'Fear'
-                                elif value <= 60:
-                                    classification = 'Neutral'
-                                elif value <= 80:
-                                    classification = 'Greed'
-                                else:
-                                    classification = 'Extreme Greed'
-
+                                classification = classify_fg(value)
                                 result = {
                                     'value': value,
                                     'classification': classification,
-                                    'avg_7d': value,  # Will be updated if we get historical
+                                    'avg_7d': value,
                                     'avg_30d': value,
-                                    'source': 'coinmarketcap'
+                                    'source': 'coinglass'
                                 }
                                 cache[cache_key] = result
-                                logger.info(f"Fetched F&G from CoinMarketCap: {value} ({classification})")
+                                logger.info(f"Fetched F&G from CoinGlass: {value} ({classification})")
                                 return result
+
             except Exception as e:
-                logger.debug(f"CoinMarketCap F&G fetch error: {e}")
+                logger.debug(f"CoinGlass F&G fetch error: {e}")
 
-            # Fallback to Alternative.me
-            url = f"{self.base_urls['alternative']}/fng/"
-            params = {'limit': 30}
-
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-
-            entries = data.get('data', [])
-            if entries:
-                current = entries[0]
-                avg_7d = sum(int(e['value']) for e in entries[:7]) / 7 if len(entries) >= 7 else int(current['value'])
-                avg_30d = sum(int(e['value']) for e in entries[:30]) / 30 if len(entries) >= 30 else int(current['value'])
-
-                result = {
-                    'value': int(current['value']),
-                    'classification': current['value_classification'],
-                    'avg_7d': round(avg_7d, 1),
-                    'avg_30d': round(avg_30d, 1),
-                    'source': 'alternative.me'
+            # FALLBACK 1: CoinGlass API endpoint (if available)
+            try:
+                api_url = "https://fapi.coinglass.com/api/index/fearGreedIndex"
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 }
-                cache[cache_key] = result
-                return result
+                response = await client.get(api_url, headers=headers, timeout=10.0)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('success') and data.get('data'):
+                        value = int(data['data'].get('value', 0))
+                        if 0 < value <= 100:
+                            classification = classify_fg(value)
+                            result = {
+                                'value': value,
+                                'classification': classification,
+                                'avg_7d': value,
+                                'avg_30d': value,
+                                'source': 'coinglass_api'
+                            }
+                            cache[cache_key] = result
+                            logger.info(f"Fetched F&G from CoinGlass API: {value} ({classification})")
+                            return result
+            except Exception as e:
+                logger.debug(f"CoinGlass API F&G fetch error: {e}")
+
+            # FALLBACK 2: Alternative.me (reliable backup)
+            try:
+                url = f"{self.base_urls['alternative']}/fng/"
+                params = {'limit': 30}
+                response = await client.get(url, params=params, timeout=10.0)
+                response.raise_for_status()
+                data = response.json()
+
+                entries = data.get('data', [])
+                if entries:
+                    current = entries[0]
+                    avg_7d = sum(int(e['value']) for e in entries[:7]) / 7 if len(entries) >= 7 else int(current['value'])
+                    avg_30d = sum(int(e['value']) for e in entries[:30]) / 30 if len(entries) >= 30 else int(current['value'])
+
+                    result = {
+                        'value': int(current['value']),
+                        'classification': current['value_classification'],
+                        'avg_7d': round(avg_7d, 1),
+                        'avg_30d': round(avg_30d, 1),
+                        'source': 'alternative.me'
+                    }
+                    cache[cache_key] = result
+                    logger.info(f"Fetched F&G from Alternative.me: {result['value']} ({result['classification']})")
+                    return result
+            except Exception as e:
+                logger.debug(f"Alternative.me F&G fetch error: {e}")
 
             return {}
 
