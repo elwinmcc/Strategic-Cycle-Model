@@ -425,6 +425,9 @@ class DataService:
         - M2SL: M2 Money Supply
         - RRPONTSYD: Reverse Repo (ON RRP)
         - WTREGEN: Treasury General Account (TGA)
+        - MANEMP: Manufacturing Employment (ISM proxy)
+        - NAPMNI: ISM Manufacturing New Orders Index
+        - NAPMPI: ISM Manufacturing Production Index
         """
         cache_key = 'fred_data'
         if cache_key in cache:
@@ -438,6 +441,9 @@ class DataService:
             'm2': 'M2SL',             # M2 Money Supply (billions)
             'rrp': 'RRPONTSYD',       # Reverse Repo (billions)
             'tga': 'WTREGEN',         # Treasury General Account (millions)
+            'ism_new_orders': 'NAPMNI',   # ISM Manufacturing: New Orders Index
+            'ism_production': 'NAPMPI',   # ISM Manufacturing: Production Index
+            'ism_employment': 'NAPMEI',   # ISM Manufacturing: Employment Index
         }
 
         try:
@@ -491,6 +497,21 @@ class DataService:
                                         result['tga'] = round(value_t, 3)
                                         result['tga_date'] = obs_date
                                         logger.info(f"FRED TGA: ${value_t:.3f}T ({obs_date})")
+                                    elif series_id == 'NAPMNI':
+                                        # ISM Manufacturing: New Orders Index
+                                        result['ism_new_orders'] = round(value, 1)
+                                        result['ism_new_orders_date'] = obs_date
+                                        logger.info(f"FRED ISM New Orders: {value:.1f} ({obs_date})")
+                                    elif series_id == 'NAPMPI':
+                                        # ISM Manufacturing: Production Index
+                                        result['ism_production'] = round(value, 1)
+                                        result['ism_production_date'] = obs_date
+                                        logger.info(f"FRED ISM Production: {value:.1f} ({obs_date})")
+                                    elif series_id == 'NAPMEI':
+                                        # ISM Manufacturing: Employment Index
+                                        result['ism_employment'] = round(value, 1)
+                                        result['ism_employment_date'] = obs_date
+                                        logger.info(f"FRED ISM Employment: {value:.1f} ({obs_date})")
                                     break
 
                 except Exception as e:
@@ -523,12 +544,110 @@ class DataService:
                 except Exception as e:
                     logger.debug(f"FRED M2 YoY calculation error: {e}")
 
+            # Calculate estimated ISM PMI from available component indices
+            # ISM PMI = (New Orders * 0.30) + (Production * 0.25) + (Employment * 0.20) + (Supplier Deliveries * 0.15) + (Inventories * 0.10)
+            # We have 3 of 5 components, so we can estimate with available data
+            ism_components = []
+            if 'ism_new_orders' in result:
+                ism_components.append(('new_orders', result['ism_new_orders'], 0.30))
+            if 'ism_production' in result:
+                ism_components.append(('production', result['ism_production'], 0.25))
+            if 'ism_employment' in result:
+                ism_components.append(('employment', result['ism_employment'], 0.20))
+
+            if ism_components:
+                # Weighted average of available components, scaled to full weight
+                total_weight = sum(comp[2] for comp in ism_components)
+                weighted_sum = sum(comp[1] * comp[2] for comp in ism_components)
+                # Scale to full 100% weight
+                estimated_pmi = weighted_sum / total_weight if total_weight > 0 else 50
+                result['ism_mfg_estimated'] = round(estimated_pmi, 1)
+                logger.info(f"FRED ISM PMI (estimated from {len(ism_components)} components): {estimated_pmi:.1f}")
+
+            # Try to fetch main ISM PMI from Trading Economics as fallback
+            if 'ism_mfg' not in result:
+                try:
+                    ism_pmi = await self._fetch_ism_trading_economics(client)
+                    if ism_pmi:
+                        result['ism_mfg'] = ism_pmi.get('ism_mfg')
+                        result['ism_mfg_prior'] = ism_pmi.get('ism_mfg_prior')
+                        result['ism_svc'] = ism_pmi.get('ism_svc')
+                        result['ism_svc_prior'] = ism_pmi.get('ism_svc_prior')
+                        logger.info(f"ISM PMI from Trading Economics: {result.get('ism_mfg')}")
+                except Exception as e:
+                    logger.debug(f"Trading Economics ISM fetch error: {e}")
+
             result['source'] = 'fred'
             cache[cache_key] = result
             return result
 
         except Exception as e:
             logger.error(f"Error fetching FRED data: {e}")
+            return {}
+
+    async def _fetch_ism_trading_economics(self, client: httpx.AsyncClient) -> Dict:
+        """
+        Fetch ISM PMI data from Trading Economics (backup source).
+        """
+        import re
+
+        result = {}
+
+        try:
+            # Fetch ISM Manufacturing PMI
+            url = "https://tradingeconomics.com/united-states/business-confidence"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+            }
+
+            response = await client.get(url, headers=headers, timeout=15.0)
+            if response.status_code == 200:
+                html = response.text
+
+                # Patterns to find ISM PMI values
+                # Trading Economics typically shows: "ISM Manufacturing PMI ... 47.8"
+                patterns = [
+                    r'ISM\s+Manufacturing\s+PMI[^0-9]*(\d+\.?\d*)',
+                    r'"ISM Manufacturing PMI"\s*[^0-9]*(\d+\.?\d*)',
+                    r'Manufacturing\s+PMI[^0-9]*(\d+\.?\d*)',
+                    r'"value"\s*:\s*(\d+\.?\d*)[^}]*"name"\s*:\s*"[^"]*ISM[^"]*Manufacturing',
+                    r'"name"\s*:\s*"[^"]*ISM[^"]*Manufacturing[^}]*"value"\s*:\s*(\d+\.?\d*)',
+                ]
+
+                for pattern in patterns:
+                    match = re.search(pattern, html, re.IGNORECASE)
+                    if match:
+                        value = float(match.group(1))
+                        if 30 < value < 70:  # Sanity check for valid PMI range
+                            result['ism_mfg'] = round(value, 1)
+                            break
+
+            # Fetch ISM Services PMI
+            svc_url = "https://tradingeconomics.com/united-states/non-manufacturing-pmi"
+            response = await client.get(svc_url, headers=headers, timeout=15.0)
+            if response.status_code == 200:
+                html = response.text
+
+                patterns = [
+                    r'ISM\s+(?:Non-Manufacturing|Services)\s+PMI[^0-9]*(\d+\.?\d*)',
+                    r'Services\s+PMI[^0-9]*(\d+\.?\d*)',
+                    r'Non-Manufacturing\s+PMI[^0-9]*(\d+\.?\d*)',
+                ]
+
+                for pattern in patterns:
+                    match = re.search(pattern, html, re.IGNORECASE)
+                    if match:
+                        value = float(match.group(1))
+                        if 30 < value < 70:
+                            result['ism_svc'] = round(value, 1)
+                            break
+
+            return result
+
+        except Exception as e:
+            logger.debug(f"Trading Economics ISM fetch error: {e}")
             return {}
 
     def build_market_data(self, live_data: Dict, manual_overrides: Optional[Dict] = None) -> Dict:
@@ -642,12 +761,12 @@ class DataService:
             'kansas_prior': 0.0,
             'dallas': -10.9,
             'dallas_prior': -10.4,
-            # ISM Data - December 2024 (released January 2025)
-            'ism_mfg': 47.9,
-            'ism_mfg_prior': 48.4,
+            # ISM Data - use live FRED data or defaults
+            'ism_mfg': fred.get('ism_mfg', fred.get('ism_mfg_estimated', 47.9)),
+            'ism_mfg_prior': fred.get('ism_mfg_prior', 48.4),
             'ism_mfg_3m': 47.5,
-            'ism_svc': 54.4,
-            'ism_svc_prior': 52.1,
+            'ism_svc': fred.get('ism_svc', 54.4),
+            'ism_svc_prior': fred.get('ism_svc_prior', 52.1),
             'etf_flow_7d': 850,
             'etf_flow_30d': 3200,
             'etf_flow_90d': 8500,
