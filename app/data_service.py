@@ -133,7 +133,7 @@ class DataService:
         try:
             # PRIMARY: CoinGlass Fear & Greed Index
             try:
-                url = "https://www.coinglass.com/pro/i/FearGreedIndex"
+                url = "https://www.coinglass.com/pro/i/feargreedindex"
                 headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -267,12 +267,16 @@ class DataService:
             return {}
 
     async def _fetch_market_data(self, client: httpx.AsyncClient) -> Dict:
-        """Fetch global market data"""
+        """Fetch global market data from CoinGecko with TradingView fallback for BTC.D"""
         cache_key = 'market_data'
         if cache_key in cache:
             return cache[cache_key]
 
+        import re
+        result = {}
+
         try:
+            # PRIMARY: CoinGecko global data
             url = f"{self.base_urls['coingecko']}/global"
 
             response = await client.get(url)
@@ -286,12 +290,47 @@ class DataService:
                 'market_cap_change_24h': data.get('market_cap_change_percentage_24h_usd', 0),
             }
 
-            cache[cache_key] = result
-            return result
+            logger.info(f"CoinGecko BTC Dominance: {result['btc_dominance']:.2f}%")
 
         except Exception as e:
-            logger.error(f"Error fetching market data: {e}")
-            return {}
+            logger.error(f"Error fetching CoinGecko market data: {e}")
+
+        # FALLBACK: TradingView BTC.D if CoinGecko failed or returned 0
+        if not result.get('btc_dominance'):
+            try:
+                tv_url = "https://www.tradingview.com/symbols/BTC.D/"
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                }
+                response = await client.get(tv_url, headers=headers, timeout=15.0)
+                if response.status_code == 200:
+                    html = response.text
+
+                    # TradingView patterns for BTC dominance
+                    patterns = [
+                        r'"last"\s*:\s*([\d.]+)',
+                        r'"close"\s*:\s*([\d.]+)',
+                        r'data-value="([\d.]+)"',
+                        r'class="[^"]*last-[^"]*"[^>]*>([\d.]+)',
+                        r'BTC\.D[^0-9]*([\d]{2}\.[\d]+)',
+                        r'([\d]{2}\.[\d]+)\s*%?\s*</?\w+>\s*(?:BTC|Dominance)',
+                    ]
+
+                    for pattern in patterns:
+                        match = re.search(pattern, html, re.IGNORECASE)
+                        if match:
+                            value = float(match.group(1))
+                            if 40 < value < 80:  # Sanity check for valid BTC.D range
+                                result['btc_dominance'] = round(value, 2)
+                                result['btc_dominance_source'] = 'tradingview'
+                                logger.info(f"TradingView BTC Dominance: {value:.2f}%")
+                                break
+            except Exception as e:
+                logger.debug(f"TradingView BTC.D fetch error: {e}")
+
+        cache[cache_key] = result
+        return result
 
     async def _fetch_mvrv_data(self, client: httpx.AsyncClient) -> Dict:
         """
