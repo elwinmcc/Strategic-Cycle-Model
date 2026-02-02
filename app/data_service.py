@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # Cache for API responses (5 minute TTL)
 cache = TTLCache(maxsize=100, ttl=300)
 
+# FRED API Key
+FRED_API_KEY = "0182e6b0c1ce20c8d583842925fe5a2d"
+
 
 class DataService:
     """Service for fetching live market data"""
@@ -27,6 +30,7 @@ class DataService:
             'alternative': 'https://api.alternative.me',
             'glassnode': 'https://api.glassnode.com/v1',
             'blockchain': 'https://api.blockchain.info',
+            'fred': 'https://api.stlouisfed.org/fred',
         }
         self.timeout = httpx.Timeout(10.0)
 
@@ -41,6 +45,7 @@ class DataService:
                     self._fetch_eth_data(client),
                     self._fetch_market_data(client),
                     self._fetch_mvrv_data(client),
+                    self._fetch_fred_data(client),
                 ]
 
                 results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -52,6 +57,7 @@ class DataService:
                     'eth': results[2] if not isinstance(results[2], Exception) else {},
                     'market': results[3] if not isinstance(results[3], Exception) else {},
                     'onchain': results[4] if not isinstance(results[4], Exception) else {},
+                    'fred': results[5] if not isinstance(results[5], Exception) else {},
                     'timestamp': datetime.now().isoformat(),
                     'status': 'success'
                 }
@@ -410,6 +416,121 @@ class DataService:
         estimated_mvrv = 0.5 * ratio + 0.3
         return round(max(0.3, min(7.0, estimated_mvrv)), 2)
 
+    async def _fetch_fred_data(self, client: httpx.AsyncClient) -> Dict:
+        """
+        Fetch macro data from FRED (Federal Reserve Economic Data).
+
+        Series IDs:
+        - WALCL: Fed Balance Sheet (Total Assets)
+        - M2SL: M2 Money Supply
+        - RRPONTSYD: Reverse Repo (ON RRP)
+        - WTREGEN: Treasury General Account (TGA)
+        """
+        cache_key = 'fred_data'
+        if cache_key in cache:
+            return cache[cache_key]
+
+        result = {}
+
+        # FRED series to fetch
+        series = {
+            'fed_bs': 'WALCL',        # Fed Balance Sheet (millions)
+            'm2': 'M2SL',             # M2 Money Supply (billions)
+            'rrp': 'RRPONTSYD',       # Reverse Repo (billions)
+            'tga': 'WTREGEN',         # Treasury General Account (millions)
+        }
+
+        try:
+            for key, series_id in series.items():
+                try:
+                    url = f"{self.base_urls['fred']}/series/observations"
+                    params = {
+                        'series_id': series_id,
+                        'api_key': FRED_API_KEY,
+                        'file_type': 'json',
+                        'sort_order': 'desc',
+                        'limit': 5,  # Get last 5 observations for recent data
+                    }
+
+                    response = await client.get(url, params=params, timeout=10.0)
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        observations = data.get('observations', [])
+
+                        if observations:
+                            # Get most recent non-null value
+                            for obs in observations:
+                                value_str = obs.get('value', '.')
+                                if value_str != '.':
+                                    value = float(value_str)
+                                    obs_date = obs.get('date', '')
+
+                                    # Convert to trillions for consistency
+                                    if series_id == 'WALCL':
+                                        # WALCL is in millions, convert to trillions
+                                        value_t = value / 1_000_000
+                                        result['fed_bs'] = round(value_t, 2)
+                                        result['fed_bs_date'] = obs_date
+                                        logger.info(f"FRED Fed BS: ${value_t:.2f}T ({obs_date})")
+                                    elif series_id == 'M2SL':
+                                        # M2SL is in billions, convert to trillions
+                                        value_t = value / 1_000
+                                        result['m2'] = round(value_t, 2)
+                                        result['m2_date'] = obs_date
+                                        logger.info(f"FRED M2: ${value_t:.2f}T ({obs_date})")
+                                    elif series_id == 'RRPONTSYD':
+                                        # RRPONTSYD is in billions, convert to trillions
+                                        value_t = value / 1_000
+                                        result['rrp'] = round(value_t, 3)
+                                        result['rrp_date'] = obs_date
+                                        logger.info(f"FRED RRP: ${value_t:.3f}T ({obs_date})")
+                                    elif series_id == 'WTREGEN':
+                                        # WTREGEN is in millions, convert to trillions
+                                        value_t = value / 1_000_000
+                                        result['tga'] = round(value_t, 3)
+                                        result['tga_date'] = obs_date
+                                        logger.info(f"FRED TGA: ${value_t:.3f}T ({obs_date})")
+                                    break
+
+                except Exception as e:
+                    logger.debug(f"FRED {series_id} fetch error: {e}")
+                    continue
+
+            # Calculate M2 YoY if we have M2 data
+            if 'm2' in result:
+                try:
+                    # Fetch M2 from 1 year ago
+                    url = f"{self.base_urls['fred']}/series/observations"
+                    one_year_ago = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+                    params = {
+                        'series_id': 'M2SL',
+                        'api_key': FRED_API_KEY,
+                        'file_type': 'json',
+                        'observation_start': one_year_ago,
+                        'observation_end': one_year_ago,
+                        'limit': 1,
+                    }
+                    response = await client.get(url, params=params, timeout=10.0)
+                    if response.status_code == 200:
+                        data = response.json()
+                        observations = data.get('observations', [])
+                        if observations and observations[0].get('value', '.') != '.':
+                            m2_1y_ago = float(observations[0]['value']) / 1_000
+                            m2_yoy = ((result['m2'] - m2_1y_ago) / m2_1y_ago) * 100
+                            result['m2_yoy'] = round(m2_yoy, 1)
+                            logger.info(f"FRED M2 YoY: {m2_yoy:.1f}%")
+                except Exception as e:
+                    logger.debug(f"FRED M2 YoY calculation error: {e}")
+
+            result['source'] = 'fred'
+            cache[cache_key] = result
+            return result
+
+        except Exception as e:
+            logger.error(f"Error fetching FRED data: {e}")
+            return {}
+
     def build_market_data(self, live_data: Dict, manual_overrides: Optional[Dict] = None) -> Dict:
         """Build MarketData object from live data and manual inputs"""
         from model import MarketData
@@ -419,6 +540,7 @@ class DataService:
         eth = live_data.get('eth', {})
         market = live_data.get('market', {})
         onchain = live_data.get('onchain', {})
+        fred = live_data.get('fred', {})
 
         # Calculate historical prices from percentage changes
         current_price = btc.get('price', 78881)
@@ -450,7 +572,13 @@ class DataService:
             'eth_btc': eth.get('price_btc', 0.032),
 
             # Market
-            'btc_dominance': market.get('btc_dominance', 58),
+            'btc_dominance': market.get('btc_dominance', 59),  # Updated default
+
+            # FRED Macro Data (live from FRED API)
+            'fed_bs': fred.get('fed_bs', 6.57),
+            'rrp': fred.get('rrp', 0.25),
+            'tga': fred.get('tga', 0.78),
+            'm2_yoy': fred.get('m2_yoy', 4.2),
 
             # Date
             'date': datetime.now().strftime('%B %d, %Y'),

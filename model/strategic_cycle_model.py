@@ -1924,7 +1924,7 @@ def get_default_market_data() -> MarketData:
         total3_btc_30d=0.38,
         others_btc=0.18,
         others_btc_30d=0.16,
-        btc_dominance=58.5,
+        btc_dominance=59.0,
         btc_dom_30d=56.0,
         vol_30d=0.55,
         vol_90d=0.60,
