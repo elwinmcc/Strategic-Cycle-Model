@@ -464,9 +464,11 @@ class DataService:
         - M2SL: M2 Money Supply
         - RRPONTSYD: Reverse Repo (ON RRP)
         - WTREGEN: Treasury General Account (TGA)
-        - MANEMP: Manufacturing Employment (ISM proxy)
         - NAPMNI: ISM Manufacturing New Orders Index
         - NAPMPI: ISM Manufacturing Production Index
+        - NAPMEI: ISM Manufacturing Employment Index
+        - GACDISA066MSFRBNY: Empire State Manufacturing Survey
+        - GACDFSA066MSFRBPHI: Philadelphia Fed Manufacturing Survey
         """
         cache_key = 'fred_data'
         if cache_key in cache:
@@ -483,6 +485,9 @@ class DataService:
             'ism_new_orders': 'NAPMNI',   # ISM Manufacturing: New Orders Index
             'ism_production': 'NAPMPI',   # ISM Manufacturing: Production Index
             'ism_employment': 'NAPMEI',   # ISM Manufacturing: Employment Index
+            # Regional Fed Surveys (leading indicators for ISM)
+            'empire_state': 'GACDISA066MSFRBNY',   # Empire State Manufacturing
+            'philly_fed': 'GACDFSA066MSFRBPHI',    # Philadelphia Fed Manufacturing
         }
 
         try:
@@ -551,6 +556,16 @@ class DataService:
                                         result['ism_employment'] = round(value, 1)
                                         result['ism_employment_date'] = obs_date
                                         logger.info(f"FRED ISM Employment: {value:.1f} ({obs_date})")
+                                    elif series_id == 'GACDISA066MSFRBNY':
+                                        # Empire State Manufacturing Survey
+                                        result['empire_state'] = round(value, 1)
+                                        result['empire_state_date'] = obs_date
+                                        logger.info(f"FRED Empire State: {value:.1f} ({obs_date})")
+                                    elif series_id == 'GACDFSA066MSFRBPHI':
+                                        # Philadelphia Fed Manufacturing Survey
+                                        result['philly_fed'] = round(value, 1)
+                                        result['philly_fed_date'] = obs_date
+                                        logger.info(f"FRED Philly Fed: {value:.1f} ({obs_date})")
                                     break
 
                 except Exception as e:
@@ -790,10 +805,11 @@ class DataService:
             'tga': 0.78,
             'm2_yoy': 4.2,
             'm2_mom': 0.3,
-            'empire_state': 7.7,
-            'empire_prior': -3.7,
-            'philly_fed': 12.6,
-            'philly_prior': -8.8,
+            # Regional Fed - use FRED live data or defaults
+            'empire_state': fred.get('empire_state', 7.7),
+            'empire_prior': -3.7,  # Would need historical fetch for prior
+            'philly_fed': fred.get('philly_fed', 12.6),
+            'philly_prior': -8.8,  # Would need historical fetch for prior
             'richmond': -6.0,
             'richmond_prior': -7.0,
             'kansas_city': 0.0,
