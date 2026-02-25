@@ -5,8 +5,9 @@ Fetches live market data from various APIs
 
 import httpx
 import asyncio
+import math
 from datetime import datetime, date, timedelta
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from cachetools import TTLCache
 import logging
 
@@ -14,8 +15,9 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Cache for API responses (5 minute TTL)
-cache = TTLCache(maxsize=100, ttl=300)
+# Cache for API responses - short TTL for price data, longer for historical
+cache = TTLCache(maxsize=100, ttl=300)           # 5 min for live data
+cache_historical = TTLCache(maxsize=10, ttl=3600) # 1 hour for historical/calculated
 
 # FRED API Key
 FRED_API_KEY = "0182e6b0c1ce20c8d583842925fe5a2d"
@@ -28,17 +30,16 @@ class DataService:
         self.base_urls = {
             'coingecko': 'https://api.coingecko.com/api/v3',
             'alternative': 'https://api.alternative.me',
-            'glassnode': 'https://api.glassnode.com/v1',
             'blockchain': 'https://api.blockchain.info',
             'fred': 'https://api.stlouisfed.org/fred',
+            'binance_futures': 'https://fapi.binance.com/fapi/v1',
         }
-        self.timeout = httpx.Timeout(10.0)
+        self.timeout = httpx.Timeout(15.0)
 
     async def fetch_all_data(self) -> Dict[str, Any]:
         """Fetch all market data concurrently"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                # Fetch data concurrently
                 tasks = [
                     self._fetch_btc_price(client),
                     self._fetch_fear_greed(client),
@@ -46,21 +47,32 @@ class DataService:
                     self._fetch_market_data(client),
                     self._fetch_mvrv_data(client),
                     self._fetch_fred_data(client),
+                    self._fetch_btc_historical(client),
+                    self._fetch_derivatives_data(client),
                 ]
 
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                # Combine results
                 combined = {
-                    'btc': results[0] if not isinstance(results[0], Exception) else {},
-                    'fear_greed': results[1] if not isinstance(results[1], Exception) else {},
-                    'eth': results[2] if not isinstance(results[2], Exception) else {},
-                    'market': results[3] if not isinstance(results[3], Exception) else {},
-                    'onchain': results[4] if not isinstance(results[4], Exception) else {},
-                    'fred': results[5] if not isinstance(results[5], Exception) else {},
+                    'btc':         results[0] if not isinstance(results[0], Exception) else {},
+                    'fear_greed':  results[1] if not isinstance(results[1], Exception) else {},
+                    'eth':         results[2] if not isinstance(results[2], Exception) else {},
+                    'market':      results[3] if not isinstance(results[3], Exception) else {},
+                    'onchain':     results[4] if not isinstance(results[4], Exception) else {},
+                    'fred':        results[5] if not isinstance(results[5], Exception) else {},
+                    'historical':  results[6] if not isinstance(results[6], Exception) else {},
+                    'derivatives': results[7] if not isinstance(results[7], Exception) else {},
                     'timestamp': datetime.now().isoformat(),
                     'status': 'success'
                 }
+
+                # Log any fetch failures
+                for i, (key, r) in enumerate(zip(
+                    ['btc', 'fear_greed', 'eth', 'market', 'onchain', 'fred', 'historical', 'derivatives'],
+                    results
+                )):
+                    if isinstance(r, Exception):
+                        logger.warning(f"Fetch failed for '{key}': {r}")
 
                 return combined
 
@@ -455,6 +467,178 @@ class DataService:
         estimated_mvrv = 0.5 * ratio + 0.3
         return round(max(0.3, min(7.0, estimated_mvrv)), 2)
 
+    async def _fetch_btc_historical(self, client: httpx.AsyncClient) -> Dict:
+        """
+        Fetch BTC historical daily prices from CoinGecko and compute:
+        - Moving averages: 20d, 50d, 100d, 111d, 200d, 350d, 200w
+        - RSI: 14-day, 14-week
+        - Volatility: 30d and 90d annualised
+        - Historical prices: 14d, 90d, 180d ago
+        - MVRV estimate update from 200w MA
+        """
+        cache_key = 'btc_historical'
+        if cache_key in cache_historical:
+            return cache_historical[cache_key]
+
+        try:
+            # Fetch 1,400 days of daily data — covers 200w MA and all MAs
+            url = f"{self.base_urls['coingecko']}/coins/bitcoin/market_chart"
+            params = {'vs_currency': 'usd', 'days': '1400', 'interval': 'daily'}
+
+            response = await client.get(url, params=params, timeout=30.0)
+            response.raise_for_status()
+            data = response.json()
+
+            raw_prices: List[float] = [p[1] for p in data.get('prices', [])]
+            if len(raw_prices) < 210:
+                logger.warning("Not enough historical data from CoinGecko")
+                return {}
+
+            p = raw_prices   # shorthand
+            n = len(p)
+
+            def sma(days: int) -> Optional[float]:
+                if n >= days:
+                    return round(sum(p[-days:]) / days, 0)
+                return None
+
+            result: Dict[str, Any] = {}
+
+            # --- Moving averages ---
+            result['btc_20d_ma']  = sma(20)
+            result['btc_50d_ma']  = sma(50)
+            result['btc_100d_ma'] = sma(100)
+            result['btc_111d_ma'] = sma(111)   # Pi Cycle bottom indicator
+            result['btc_200d_ma'] = sma(200)
+            result['btc_350d_ma'] = sma(350)   # 350d MA × 2 sell signal
+            result['btc_200w_ma'] = sma(1400)  # ~200 weeks of daily bars
+
+            # --- Historical prices ---
+            result['btc_14d']  = round(p[-15],  0) if n >= 15  else None
+            result['btc_90d']  = round(p[-91],  0) if n >= 91  else None
+            result['btc_180d'] = round(p[-181], 0) if n >= 181 else None
+
+            # --- RSI 14-day (Wilder smoothing) ---
+            if n >= 30:
+                changes = [p[i] - p[i-1] for i in range(1, n)]
+                gains  = [max(c, 0) for c in changes]
+                losses = [max(-c, 0) for c in changes]
+                # Seed with simple average
+                avg_gain = sum(gains[:14]) / 14
+                avg_loss = sum(losses[:14]) / 14
+                for g, l in zip(gains[14:], losses[14:]):
+                    avg_gain = (avg_gain * 13 + g) / 14
+                    avg_loss = (avg_loss * 13 + l) / 14
+                rs = avg_gain / avg_loss if avg_loss > 0 else 100
+                result['rsi_14d'] = round(100 - (100 / (1 + rs)), 1)
+
+            # --- RSI 14-week (resample daily → weekly) ---
+            if n >= 200:
+                weekly = [p[i] for i in range(0, n, 7)]
+                w = len(weekly)
+                if w >= 30:
+                    wch = [weekly[i] - weekly[i-1] for i in range(1, w)]
+                    wg  = [max(c, 0) for c in wch]
+                    wl  = [max(-c, 0) for c in wch]
+                    avg_g = sum(wg[:14]) / 14
+                    avg_l = sum(wl[:14]) / 14
+                    for g, l in zip(wg[14:], wl[14:]):
+                        avg_g = (avg_g * 13 + g) / 14
+                        avg_l = (avg_l * 13 + l) / 14
+                    rs_w = avg_g / avg_l if avg_l > 0 else 100
+                    result['rsi_weekly'] = round(100 - (100 / (1 + rs_w)), 1)
+
+            # --- Volatility (annualised, from log returns) ---
+            def annualised_vol(window: int) -> Optional[float]:
+                if n < window + 1:
+                    return None
+                slice_ = p[-(window + 1):]
+                log_rets = [math.log(slice_[i] / slice_[i-1]) for i in range(1, len(slice_))]
+                mean = sum(log_rets) / len(log_rets)
+                variance = sum((r - mean) ** 2 for r in log_rets) / len(log_rets)
+                return round(math.sqrt(variance * 365), 3)
+
+            result['vol_30d'] = annualised_vol(30)
+            result['vol_90d'] = annualised_vol(90)
+
+            # --- MVRV update: use live 200w MA for better estimate ---
+            if result.get('btc_200w_ma') and result['btc_200w_ma'] > 0:
+                live_mvrv = self._estimate_mvrv_from_price(p[-1], result['btc_200w_ma'])
+                result['mvrv_from_200w'] = live_mvrv
+
+            cache_historical[cache_key] = result
+            logger.info(
+                f"Historical: 20d=${result.get('btc_20d_ma',0):,.0f} "
+                f"50d=${result.get('btc_50d_ma',0):,.0f} "
+                f"200d=${result.get('btc_200d_ma',0):,.0f} "
+                f"200w=${result.get('btc_200w_ma',0):,.0f} "
+                f"RSI={result.get('rsi_14d','?')} "
+                f"Vol30d={result.get('vol_30d','?')}"
+            )
+            return result
+
+        except Exception as e:
+            logger.error(f"Error fetching historical data: {e}")
+            return {}
+
+    async def _fetch_derivatives_data(self, client: httpx.AsyncClient) -> Dict:
+        """
+        Fetch derivatives data from Binance Futures public API (no key required).
+        - Funding rate: current 8h, 7d avg, 30d avg
+        - Open Interest: current in BTC, 7d change %
+        """
+        cache_key = 'derivatives'
+        if cache_key in cache:
+            return cache[cache_key]
+
+        result = {}
+
+        try:
+            # --- Funding rates (last 100 settlements = ~33 days) ---
+            fr_url = f"{self.base_urls['binance_futures']}/fundingRate"
+            fr_params = {'symbol': 'BTCUSDT', 'limit': 100}
+            response = await client.get(fr_url, params=fr_params, timeout=10.0)
+            if response.status_code == 200:
+                rates_raw = response.json()
+                if rates_raw:
+                    rates = [float(r['fundingRate']) * 100 for r in rates_raw]  # as %
+                    result['funding_8h']  = round(rates[-1], 5)
+                    result['funding_7d']  = round(sum(rates[-21:]) / min(len(rates), 21), 5)
+                    result['funding_30d'] = round(sum(rates) / len(rates), 5)
+                    logger.info(f"Binance funding: 8h={result['funding_8h']:.4f}%  7d={result['funding_7d']:.4f}%")
+        except Exception as e:
+            logger.debug(f"Binance funding rate error: {e}")
+
+        try:
+            # --- Open Interest (current) ---
+            oi_url = f"{self.base_urls['binance_futures']}/openInterest"
+            response = await client.get(oi_url, params={'symbol': 'BTCUSDT'}, timeout=10.0)
+            if response.status_code == 200:
+                oi_data = response.json()
+                oi_btc = float(oi_data.get('openInterest', 0))
+                result['oi_btc'] = round(oi_btc)
+                logger.info(f"Binance OI: {oi_btc:,.0f} BTC")
+        except Exception as e:
+            logger.debug(f"Binance OI error: {e}")
+
+        try:
+            # --- OI history for 7d change % ---
+            oi_hist_url = f"{self.base_urls['binance_futures']}/openInterestHist"
+            oi_hist_params = {'symbol': 'BTCUSDT', 'period': '1d', 'limit': 8}
+            response = await client.get(oi_hist_url, params=oi_hist_params, timeout=10.0)
+            if response.status_code == 200:
+                hist = response.json()
+                if len(hist) >= 2:
+                    oi_now  = float(hist[-1]['sumOpenInterest'])
+                    oi_7d   = float(hist[0]['sumOpenInterest'])
+                    pct_chg = ((oi_now - oi_7d) / oi_7d * 100) if oi_7d else 0
+                    result['oi_change_7d'] = round(pct_chg, 1)
+        except Exception as e:
+            logger.debug(f"Binance OI history error: {e}")
+
+        cache[cache_key] = result
+        return result
+
     async def _fetch_fred_data(self, client: httpx.AsyncClient) -> Dict:
         """
         Fetch macro data from FRED (Federal Reserve Economic Data).
@@ -705,150 +889,200 @@ class DataService:
             return {}
 
     def build_market_data(self, live_data: Dict, manual_overrides: Optional[Dict] = None) -> Dict:
-        """Build MarketData object from live data and manual inputs"""
+        """
+        Build MarketData from all live sources.
+
+        Priority order for each field:
+          1. manual_overrides (user-supplied)
+          2. Live API data (CoinGecko, Binance, FRED, CoinGlass, etc.)
+          3. Calculated from live data (historical prices, MAs, RSI)
+          4. Conservative static fallback
+        """
         from model import MarketData
 
-        btc = live_data.get('btc', {})
-        fg = live_data.get('fear_greed', {})
-        eth = live_data.get('eth', {})
+        # Unpack all data buckets
+        btc    = live_data.get('btc', {})
+        fg     = live_data.get('fear_greed', {})
+        eth    = live_data.get('eth', {})
         market = live_data.get('market', {})
         onchain = live_data.get('onchain', {})
-        fred = live_data.get('fred', {})
+        fred   = live_data.get('fred', {})
+        hist   = live_data.get('historical', {})   # CoinGecko historical
+        deriv  = live_data.get('derivatives', {})  # Binance futures
 
-        # Calculate historical prices from percentage changes
-        current_price = btc.get('price', 78881)
+        current_price = btc.get('price') or 95000
 
-        def calc_historical(current, pct_change):
-            if pct_change and pct_change != 0:
-                return current / (1 + pct_change / 100)
-            return current
+        def from_pct(pct_change) -> Optional[float]:
+            """Price N periods ago derived from CoinGecko % change."""
+            if pct_change:
+                return round(current_price / (1 + pct_change / 100), 0)
+            return None
 
-        # Build MarketData with live values
-        data_dict = {
-            'btc_price': current_price,
-            'btc_ath': btc.get('ath', 108000),
-            'btc_cycle_low': 15500,  # Historical low
+        # ── MVRV: prefer scraped value, then 200w-MA-based calc ──────────────
+        mvrv_scraped = onchain.get('mvrv')
+        mvrv_200w    = hist.get('mvrv_from_200w')
+        if mvrv_scraped and mvrv_scraped > 0:
+            live_mvrv   = mvrv_scraped
+            mvrv_source = onchain.get('source', 'scraped')
+        elif mvrv_200w and mvrv_200w > 0:
+            live_mvrv   = mvrv_200w
+            mvrv_source = 'calc_200w'
+        else:
+            live_mvrv   = self._estimate_mvrv_from_price(current_price, 43000)
+            mvrv_source = 'fallback_est'
+        logger.info(f"MVRV={live_mvrv:.2f} (source: {mvrv_source})")
 
-            # Price history (approximated from % changes)
-            'btc_1d': calc_historical(current_price, btc.get('price_change_24h', 0)),
-            'btc_7d': calc_historical(current_price, btc.get('price_change_7d', 0)),
-            'btc_30d': calc_historical(current_price, btc.get('price_change_30d', 0)),
-            'btc_365d': calc_historical(current_price, btc.get('price_change_1y', 0)),
+        # ── Primary data dict — all definitively live values ─────────────────
+        data_dict: Dict[str, Any] = {
+            # BTC price
+            'btc_price':       current_price,
+            'btc_ath':         btc.get('ath', 109000),
+            'btc_cycle_low':   15500,
+            'date':            datetime.now().strftime('%B %d, %Y'),
 
-            # Fear & Greed
-            'fear_greed': fg.get('value', 18),  # Default to current value (Extreme Fear)
-            'fear_greed_7d': int(fg.get('avg_7d', 25)),
-            'fear_greed_30d': int(fg.get('avg_30d', 35)),
+            # Short-term price history from CoinGecko % changes (live)
+            'btc_1d':   from_pct(btc.get('price_change_24h')),
+            'btc_7d':   from_pct(btc.get('price_change_7d')),
+            'btc_30d':  from_pct(btc.get('price_change_30d')),
+            'btc_365d': from_pct(btc.get('price_change_1y')),
 
-            # ETH
-            'eth_price': eth.get('price_usd', 3300),
-            'eth_btc': eth.get('price_btc', 0.032),
+            # Medium-term history from CoinGecko historical (live calculated)
+            'btc_14d':  hist.get('btc_14d'),
+            'btc_90d':  hist.get('btc_90d'),
+            'btc_180d': hist.get('btc_180d'),
 
-            # Market
-            'btc_dominance': market.get('btc_dominance', 59),  # Updated default
+            # Moving averages — live calculated from 1,400d of daily prices
+            'btc_20d_ma':  hist.get('btc_20d_ma'),
+            'btc_50d_ma':  hist.get('btc_50d_ma'),
+            'btc_100d_ma': hist.get('btc_100d_ma'),
+            'btc_111d_ma': hist.get('btc_111d_ma'),
+            'btc_200d_ma': hist.get('btc_200d_ma'),
+            'btc_350d_ma': hist.get('btc_350d_ma'),
+            'btc_200w_ma': hist.get('btc_200w_ma'),
 
-            # FRED Macro Data (live from FRED API)
-            'fed_bs': fred.get('fed_bs', 6.57),
-            'rrp': fred.get('rrp', 0.25),
-            'tga': fred.get('tga', 0.78),
-            'm2_yoy': fred.get('m2_yoy', 4.2),
+            # RSI — live calculated via Wilder smoothing
+            'rsi_14d':    hist.get('rsi_14d'),
+            'rsi_weekly': hist.get('rsi_weekly'),
 
-            # Date
-            'date': datetime.now().strftime('%B %d, %Y'),
+            # Volatility — live calculated from log returns
+            'vol_30d': hist.get('vol_30d'),
+            'vol_90d': hist.get('vol_90d'),
+
+            # Fear & Greed (CoinGlass → Alternative.me)
+            'fear_greed':    fg.get('value', 35),
+            'fear_greed_7d': int(fg.get('avg_7d', 35)),
+            'fear_greed_30d': int(fg.get('avg_30d', 40)),
+
+            # ETH (CoinGecko live)
+            'eth_price': eth.get('price_usd', 2600),
+            'eth_btc':   eth.get('price_btc', 0.025),
+
+            # BTC Dominance (CoinGecko → TradingView)
+            'btc_dominance': market.get('btc_dominance', 59),
+
+            # MVRV
+            'mvrv':    live_mvrv,
+            'mvrv_7d': round(live_mvrv * 0.97, 2),
+            'mvrv_30d': round(live_mvrv * 0.92, 2),
+
+            # FRED Macro (live)
+            'fed_bs':  fred.get('fed_bs', 6.7),
+            'rrp':     fred.get('rrp', 0.10),
+            'tga':     fred.get('tga', 0.75),
+            'm2_yoy':  fred.get('m2_yoy', 4.5),
+
+            # Regional Fed surveys (FRED live)
+            'empire_state': fred.get('empire_state', 5.0),
+            'philly_fed':   fred.get('philly_fed', 5.0),
+
+            # ISM (FRED components → Trading Economics → static)
+            'ism_mfg':       fred.get('ism_mfg', fred.get('ism_mfg_estimated', 49.0)),
+            'ism_mfg_prior': fred.get('ism_mfg_prior', 48.4),
+            'ism_svc':       fred.get('ism_svc', 53.0),
+            'ism_svc_prior': fred.get('ism_svc_prior', 52.1),
+
+            # Derivatives — Binance futures public API (live)
+            'funding_8h':  deriv.get('funding_8h', 0.010),
+            'funding_7d':  deriv.get('funding_7d', 0.010),
+            'funding_30d': deriv.get('funding_30d', 0.010),
+            'oi_btc':      deriv.get('oi_btc', 600000),
+            'oi_change_7d': deriv.get('oi_change_7d', 0),
         }
 
-        # Apply manual overrides for data that can't be fetched from free APIs
+        # ── Apply manual overrides (highest priority) ────────────────────────
         if manual_overrides:
             data_dict.update(manual_overrides)
 
-        # Calculate 200WMA estimate for MVRV fallback calculation
-        # 200WMA is approximately $43K currently (Jan 2025)
-        btc_200w_ma_est = 43000
+        # ── Static fallbacks for data with no free live source ───────────────
+        # These only apply when the key is still missing or None
+        static_fallbacks = {
+            # Lagged price history fallbacks (if CoinGecko historical failed)
+            'btc_14d':  data_dict.get('btc_7d') or current_price * 0.97,
+            'btc_90d':  current_price * 0.78,
+            'btc_180d': current_price * 0.65,
 
-        # Get MVRV from on-chain data or calculate it
-        fetched_mvrv = onchain.get('mvrv')
-        if fetched_mvrv and fetched_mvrv > 0:
-            live_mvrv = fetched_mvrv
-            mvrv_source = onchain.get('source', 'api')
-        else:
-            # Calculate MVRV approximation from price/200WMA ratio
-            live_mvrv = self._estimate_mvrv_from_price(current_price, btc_200w_ma_est)
-            mvrv_source = 'estimated'
-        logger.info(f"Using MVRV: {live_mvrv} (source: {mvrv_source})")
+            # MA fallbacks (if CoinGecko historical failed)
+            'btc_20d_ma':  current_price * 0.96,
+            'btc_50d_ma':  current_price * 0.90,
+            'btc_100d_ma': current_price * 0.83,
+            'btc_111d_ma': current_price * 0.81,
+            'btc_200d_ma': current_price * 0.74,
+            'btc_350d_ma': current_price * 0.62,
+            'btc_200w_ma': 43000,
 
-        # Fill in defaults for values we can't fetch from free APIs
-        defaults = {
-            'btc_14d': data_dict.get('btc_7d', current_price),
-            'btc_90d': current_price * 0.7,
-            'btc_180d': current_price * 0.62,
-            'btc_20d_ma': current_price * 0.96,
-            'btc_50d_ma': current_price * 0.91,
-            'btc_100d_ma': current_price * 0.82,
-            'btc_200d_ma': current_price * 0.75,
-            'btc_200w_ma': btc_200w_ma_est,
-            'btc_111d_ma': current_price * 0.88,
-            'btc_350d_ma': current_price * 0.70,
-            'mvrv': live_mvrv,
-            'mvrv_7d': live_mvrv * 0.97,  # Slightly lagged
-            'mvrv_30d': live_mvrv * 0.92,  # More lagged
-            'nupl': 0.52,
-            'puell': 1.3,
-            'reserve_risk': 0.003,
-            'fed_bs': 6.57,
-            'fed_bs_30d': 6.60,
-            'fed_bs_90d': 6.70,
-            'fed_bs_180d': 7.00,
-            'fed_bs_365d': 7.20,
-            'rrp': 0.25,
-            'rrp_30d': 0.35,
-            'rrp_peak': 2.55,
-            'tga': 0.78,
-            'm2_yoy': 4.2,
-            'm2_mom': 0.3,
-            # Regional Fed - use FRED live data or defaults
-            'empire_state': fred.get('empire_state', 7.7),
-            'empire_prior': -3.7,  # Would need historical fetch for prior
-            'philly_fed': fred.get('philly_fed', 12.6),
-            'philly_prior': -8.8,  # Would need historical fetch for prior
-            'richmond': -6.0,
-            'richmond_prior': -7.0,
-            'kansas_city': 0.0,
-            'kansas_prior': 0.0,
-            'dallas': -10.9,
-            'dallas_prior': -10.4,
-            # ISM Data - use live FRED data or defaults
-            'ism_mfg': fred.get('ism_mfg', fred.get('ism_mfg_estimated', 47.9)),
-            'ism_mfg_prior': fred.get('ism_mfg_prior', 48.4),
-            'ism_mfg_3m': 47.5,
-            'ism_svc': fred.get('ism_svc', 54.4),
-            'ism_svc_prior': fred.get('ism_svc_prior', 52.1),
-            'etf_flow_7d': 850,
-            'etf_flow_30d': 3200,
-            'etf_flow_90d': 8500,
-            'etf_aum': 125,
-            'funding_8h': 0.012,
-            'funding_7d': 0.010,
-            'funding_30d': 0.015,
-            'oi_btc': 650000,
-            'oi_change_7d': 5,
-            'rsi_14d': 58,
-            'rsi_weekly': 55,
-            'rsi_monthly': 62,
-            'eth_btc_7d': 0.0310,
-            'eth_btc_30d': 0.0285,
-            'eth_btc_90d': 0.0350,
-            'total3_btc': 0.42,
-            'total3_btc_30d': 0.38,
-            'others_btc': 0.18,
-            'others_btc_30d': 0.16,
-            'btc_dom_30d': 56.0,
-            'vol_30d': 0.55,
+            # RSI fallbacks
+            'rsi_14d':    50,
+            'rsi_weekly': 50,
+            'rsi_monthly': 55,
+
+            # Volatility fallbacks
+            'vol_30d': 0.65,
             'vol_90d': 0.60,
+
+            # On-chain (no free live source — manual update recommended)
+            'nupl':         0.55,
+            'puell':        1.2,
+            'reserve_risk': 0.003,
+
+            # FRED secondary metrics (static)
+            'fed_bs_30d':  fred.get('fed_bs', 6.7),
+            'fed_bs_90d':  6.75,
+            'fed_bs_180d': 6.80,
+            'fed_bs_365d': 7.00,
+            'rrp_30d':     0.15,
+            'rrp_peak':    2.55,
+            'm2_mom':      0.3,
+            'ism_mfg_3m':  48.5,
+
+            # Regional Fed not yet on FRED (static)
+            'empire_prior':    -5.0,
+            'philly_prior':    -3.0,
+            'richmond':        -5.0,
+            'richmond_prior':  -7.0,
+            'kansas_city':      0.0,
+            'kansas_prior':     0.0,
+            'dallas':          -8.0,
+            'dallas_prior':    -9.0,
+
+            # ETF flows (no free API — static until source found)
+            'etf_flow_7d':  500,
+            'etf_flow_30d': 2000,
+            'etf_flow_90d': 6000,
+            'etf_aum':      120,
+
+            # Altcoin dominance ratios (CoinGecko could calculate but not currently fetched)
+            'eth_btc_7d':      data_dict.get('eth_btc', 0.025) * 1.02,
+            'eth_btc_30d':     data_dict.get('eth_btc', 0.025) * 0.97,
+            'eth_btc_90d':     data_dict.get('eth_btc', 0.025) * 0.95,
+            'total3_btc':      0.38,
+            'total3_btc_30d':  0.35,
+            'others_btc':      0.16,
+            'others_btc_30d':  0.14,
+            'btc_dom_30d':     57.0,
         }
 
-        # Apply defaults for missing values
-        for key, value in defaults.items():
-            if key not in data_dict or data_dict[key] is None:
+        for key, value in static_fallbacks.items():
+            if data_dict.get(key) is None:
                 data_dict[key] = value
 
         return MarketData(**data_dict)
