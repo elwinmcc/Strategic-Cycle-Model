@@ -346,113 +346,129 @@ class DataService:
 
     async def _fetch_mvrv_data(self, client: httpx.AsyncClient) -> Dict:
         """
-        Fetch MVRV and on-chain data.
-        Tries multiple free sources, falls back to calculation from market cap.
+        Fetch MVRV ratio from multiple sources.
+        Priority: CryptoQuant → Bitbo.io → blockchain.info calculation
         """
         cache_key = 'mvrv_data'
         if cache_key in cache:
             return cache[cache_key]
 
+        import re
+
+        # ── PRIMARY: CryptoQuant MVRV Ratio ──────────────────────────────────
         try:
-            # Try to fetch from Bitbo.io MVRV Z-Score page
-            try:
-                url = "https://charts.bitbo.io/mvrv-z-score/"
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-                response = await client.get(url, headers=headers, timeout=10.0)
-                if response.status_code == 200:
-                    html = response.text
-                    # Look for MVRV value in the page - typically in a data attribute or script
-                    import re
-
-                    # Try to find MVRV value patterns in the HTML
-                    # The page may show both MVRV Z-Score and raw MVRV
-                    patterns = [
-                        # MVRV ratio patterns
-                        r'"mvrv"\s*:\s*([\d.]+)',
-                        r"'mvrv'\s*:\s*([\d.]+)",
-                        r'mvrv["\']?\s*[:=]\s*([\d.]+)',
-                        r'MVRV\s*[:=]?\s*([\d.]+)',
-                        # Z-Score patterns (we'll convert to approximate MVRV)
-                        r'"z[_-]?score"\s*:\s*([-\d.]+)',
-                        r'z[_-]?score["\']?\s*[:=]\s*([-\d.]+)',
-                        # Current value patterns
-                        r'"current"\s*:\s*([\d.]+)',
-                        r'"value"\s*:\s*([\d.]+)',
-                        r'data-value["\']?\s*=\s*["\']?([\d.]+)',
-                    ]
-
-                    for pattern in patterns:
-                        match = re.search(pattern, html, re.IGNORECASE)
-                        if match:
-                            value = float(match.group(1))
-                            # Check if it's a Z-Score (typically -1 to 10 range, often < 3)
-                            if 'z' in pattern.lower() or 'score' in pattern.lower():
-                                # Z-Score to MVRV conversion:
-                                # Z-Score 0 ≈ MVRV 1.0 (at realized value)
-                                # Z-Score 0.73 ≈ MVRV ~1.6
-                                # Z-Score 2 ≈ MVRV ~2.5
-                                # Z-Score 4 ≈ MVRV ~4.0
-                                # Formula: MVRV ≈ 1.0 + (z_score * 0.8)
-                                mvrv = 1.0 + (value * 0.8)
-                            else:
-                                mvrv = value
-
-                            if 0.3 < mvrv < 10:  # Sanity check for valid MVRV range
-                                result = {'mvrv': round(mvrv, 2), 'source': 'bitbo', 'raw_value': value}
-                                cache[cache_key] = result
-                                logger.info(f"Fetched MVRV from Bitbo: {mvrv:.2f}")
-                                return result
-
-                    # Try to find in script tags with JSON data
-                    json_pattern = r'\{[^{}]*"value"\s*:\s*([\d.]+)[^{}]*\}'
-                    matches = re.findall(json_pattern, html, re.IGNORECASE)
-                    for val_str in matches:
-                        try:
-                            mvrv = float(val_str)
-                            if 0.3 < mvrv < 10:
-                                result = {'mvrv': round(mvrv, 2), 'source': 'bitbo'}
-                                cache[cache_key] = result
-                                logger.info(f"Fetched MVRV from Bitbo: {mvrv:.2f}")
-                                return result
-                        except:
-                            continue
-
-            except Exception as e:
-                logger.debug(f"Bitbo.io fetch error: {e}")
-
-            # Try blockchain.info for market cap and calculate approximation
-            try:
-                # Get market cap
-                mc_url = f"{self.base_urls['blockchain']}/q/marketcap"
-                mc_response = await client.get(mc_url, timeout=5.0)
-
-                if mc_response.status_code == 200:
-                    market_cap = float(mc_response.text)
-
-                    # Realized cap approximation based on on-chain data
-                    # Current realized cap is approximately $900B-$1T (Jan 2025)
-                    # With Z-Score 0.73 at ~$79K and MVRV ~1.58:
-                    # Market cap ~$1.56T / MVRV 1.58 = Realized cap ~$987B
-                    estimated_realized_cap = 950_000_000_000  # ~$950B estimate
-
-                    mvrv = market_cap / estimated_realized_cap
-                    result = {'mvrv': round(mvrv, 2), 'source': 'calculated', 'market_cap': market_cap}
-                    cache[cache_key] = result
-                    logger.info(f"Calculated MVRV: {mvrv:.2f} from market cap ${market_cap/1e12:.2f}T")
-                    return result
-            except Exception as e:
-                logger.debug(f"Blockchain.info API error: {e}")
-
-            # Final fallback: estimate from price relative to 200WMA
-            result = {'mvrv': None, 'source': 'unavailable'}
-            cache[cache_key] = result
-            return result
-
+            # CryptoQuant public chart data endpoint
+            cq_url = "https://api.cryptoquant.com/v1/btc/market-data/mvrv"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json',
+            }
+            response = await client.get(cq_url, headers=headers, timeout=10.0)
+            if response.status_code == 200:
+                data = response.json()
+                # CryptoQuant API response format
+                if data.get('status', {}).get('code') == 0:
+                    result_data = data.get('result', {}).get('data', [])
+                    if result_data:
+                        latest = result_data[-1]
+                        mvrv = float(latest.get('mvrv', 0))
+                        if 0.3 < mvrv < 10:
+                            result = {'mvrv': round(mvrv, 2), 'source': 'cryptoquant'}
+                            cache[cache_key] = result
+                            logger.info(f"CryptoQuant MVRV: {mvrv:.2f}")
+                            return result
         except Exception as e:
-            logger.error(f"Error fetching MVRV data: {e}")
-            return {'mvrv': None, 'source': 'error'}
+            logger.debug(f"CryptoQuant API error: {e}")
+
+        # ── FALLBACK 1: CryptoQuant public chart page scraping ───────────────
+        try:
+            cq_page_url = "https://cryptoquant.com/asset/btc/chart/market-data/mvrv"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            }
+            response = await client.get(cq_page_url, headers=headers, timeout=15.0)
+            if response.status_code == 200:
+                html = response.text
+                # Look for MVRV value in page data
+                patterns = [
+                    r'"mvrv"\s*:\s*([\d.]+)',
+                    r'"value"\s*:\s*([\d.]+)[^}]*"metric"\s*:\s*"mvrv"',
+                    r'"metric"\s*:\s*"mvrv"[^}]*"value"\s*:\s*([\d.]+)',
+                    r'mvrv["\']?\s*[:=]\s*([\d.]+)',
+                    r'MVRV[^0-9]*([\d]\.[0-9]+)',
+                ]
+                for pattern in patterns:
+                    match = re.search(pattern, html, re.IGNORECASE)
+                    if match:
+                        mvrv = float(match.group(1))
+                        if 0.3 < mvrv < 10:
+                            result = {'mvrv': round(mvrv, 2), 'source': 'cryptoquant_page'}
+                            cache[cache_key] = result
+                            logger.info(f"CryptoQuant (page) MVRV: {mvrv:.2f}")
+                            return result
+        except Exception as e:
+            logger.debug(f"CryptoQuant page scrape error: {e}")
+
+        # ── FALLBACK 2: Bitbo.io MVRV Z-Score page ───────────────────────────
+        try:
+            url = "https://charts.bitbo.io/mvrv-z-score/"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            response = await client.get(url, headers=headers, timeout=10.0)
+            if response.status_code == 200:
+                html = response.text
+                patterns = [
+                    r'"mvrv"\s*:\s*([\d.]+)',
+                    r"'mvrv'\s*:\s*([\d.]+)",
+                    r'mvrv["\']?\s*[:=]\s*([\d.]+)',
+                    r'MVRV\s*[:=]?\s*([\d.]+)',
+                    r'"z[_-]?score"\s*:\s*([-\d.]+)',
+                    r'"current"\s*:\s*([\d.]+)',
+                    r'"value"\s*:\s*([\d.]+)',
+                ]
+
+                for pattern in patterns:
+                    match = re.search(pattern, html, re.IGNORECASE)
+                    if match:
+                        value = float(match.group(1))
+                        if 'z' in pattern.lower() or 'score' in pattern.lower():
+                            mvrv = 1.0 + (value * 0.8)  # Z-Score to MVRV approximation
+                        else:
+                            mvrv = value
+
+                        if 0.3 < mvrv < 10:
+                            result = {'mvrv': round(mvrv, 2), 'source': 'bitbo', 'raw_value': value}
+                            cache[cache_key] = result
+                            logger.info(f"Bitbo MVRV: {mvrv:.2f}")
+                            return result
+        except Exception as e:
+            logger.debug(f"Bitbo.io fetch error: {e}")
+
+        # ── FALLBACK 3: Calculate from market cap / realized cap ─────────────
+        try:
+            mc_url = f"{self.base_urls['blockchain']}/q/marketcap"
+            mc_response = await client.get(mc_url, timeout=5.0)
+            if mc_response.status_code == 200:
+                market_cap = float(mc_response.text)
+                # Realized cap estimate: grows ~0.5% per month from base
+                # Base: $850B in Jan 2025, now ~$900B+ (Feb 2026)
+                base_realized_cap = 850_000_000_000
+                months_since_base = 13  # Approximate months since Jan 2025
+                realized_cap = base_realized_cap * (1.005 ** months_since_base)
+                mvrv = market_cap / realized_cap
+                result = {'mvrv': round(mvrv, 2), 'source': 'calculated', 'market_cap': market_cap}
+                cache[cache_key] = result
+                logger.info(f"Calculated MVRV: {mvrv:.2f} (MC=${market_cap/1e12:.2f}T, RC=${realized_cap/1e12:.2f}T)")
+                return result
+        except Exception as e:
+            logger.debug(f"Blockchain.info API error: {e}")
+
+        # ── Final fallback: return None, let build_market_data handle it ─────
+        result = {'mvrv': None, 'source': 'unavailable'}
+        cache[cache_key] = result
+        return result
 
     def _estimate_mvrv_from_price(self, price: float, ma_200w: float) -> float:
         """
