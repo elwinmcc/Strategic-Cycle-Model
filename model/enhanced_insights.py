@@ -2049,10 +2049,13 @@ class PowerLawLPPLEngine:
         # Log(P) = log(A) + k * log(T)
         # From historical data fitting: log(A) ≈ -2.5, so A ≈ 0.082
 
-        # Use median/support line coefficient
-        A_support = 0.015   # Lower bound (support)
-        A_median = 0.045    # Median fair value
-        A_upper = 0.12      # Upper bound (resistance)
+        # CALIBRATED coefficients from historical cycle data (v7.2):
+        # - Nov 2022 cycle bottom: $15,500 at age 13.9 years
+        # - Nov 2021 cycle peak: $69,000 at age 12.89 years
+        # These anchor the support (bottoms) and upper (peaks) bounds.
+        A_support = 0.0104   # Lower bound - where cycle bottoms occur
+        A_median = 0.027     # Median fair value (geometric mean)
+        A_upper = 0.070      # Upper bound - where cycle peaks occur
 
         fair_value_support = A_support * (age_years ** self.POWER_LAW_INDEX)
         fair_value_median = A_median * (age_years ** self.POWER_LAW_INDEX)
