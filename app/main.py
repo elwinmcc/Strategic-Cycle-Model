@@ -67,10 +67,21 @@ async def analyze():
             if hasattr(inputs, key):
                 setattr(inputs, key, value)
 
+        # If no meaningful data was fetched (no API keys or all calls failed),
+        # fall back to demo data so the dashboard isn't blank
+        if inputs.btc_price == 0 and not inputs.sources:
+            logger.warning("No live data fetched — falling back to demo data. Set COINGLASS_API_KEY and FRED_API_KEY env vars.")
+            inputs = _create_demo_inputs()
+            inputs.warnings.append("Using demo data — set COINGLASS_API_KEY and FRED_API_KEY environment variables for live data")
+            for key, value in manual_overrides.items():
+                if hasattr(inputs, key):
+                    setattr(inputs, key, value)
+
         result = run_analysis(inputs)
 
+        live_status = "live" if "demo" not in str(inputs.sources) else "demo"
         result["data_source"] = {
-            "live_data_status": "live",
+            "live_data_status": live_status,
             "timestamp": inputs.timestamp,
             "has_manual_overrides": bool(manual_overrides),
             "sources_count": len(inputs.sources),
@@ -83,47 +94,55 @@ async def analyze():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _create_demo_inputs() -> ModelInputs:
+    """Create demo ModelInputs with realistic sample data."""
+    inputs = ModelInputs(
+        btc_price=84000,
+        btc_ath=126080,
+        drawdown_pct=-33.4,
+        mvrv=1.8,
+        realized_price=46667,
+        sth_realized_price=52000,
+        lth_realized_price=38000,
+        nupl=0.52,
+        fear_greed=25,
+        fear_greed_label="Extreme Fear",
+        coinbase_premium=0.1,
+        funding_rate=0.005,
+        oi_total=28000000000,
+        long_short_ratio=1.1,
+        liquidation_24h=150000000,
+        futures_basis=8.0,
+        put_call_ratio=0.65,
+        max_pain=85000,
+        options_oi=12000000000,
+        etf_flow_daily=50000000,
+        etf_flow_weekly=200000000,
+        etf_cumulative=35000000000,
+        hy_oas=3.5,
+        yield_curve_2s10s=0.25,
+        initial_claims=220000,
+        anfci=-0.15,
+        fed_bs=6800,
+        rrp=200,
+        tga=750,
+        rsi_daily=42,
+        price_30d_ago=90000,
+        global_m2_growth=3.0,
+        eth_price=2100,
+        eth_btc=0.025,
+        btc_dominance=61.5,
+        timestamp=datetime.now().isoformat(),
+    )
+    inputs.sources = {"demo": "Default values"}
+    return inputs
+
+
 @app.get("/api/analyze/default")
 async def analyze_default():
     """Run model analysis with default/demo data."""
     try:
-        inputs = ModelInputs(
-            btc_price=84000,
-            btc_ath=126080,
-            drawdown_pct=-33.4,
-            mvrv=1.8,
-            realized_price=46667,
-            sth_realized_price=52000,
-            lth_realized_price=38000,
-            nupl=0.52,
-            fear_greed=25,
-            fear_greed_label="Extreme Fear",
-            coinbase_premium=0.1,
-            funding_rate=0.005,
-            oi_total=28000000000,
-            long_short_ratio=1.1,
-            liquidation_24h=150000000,
-            futures_basis=8.0,
-            put_call_ratio=0.65,
-            max_pain=85000,
-            etf_flow_daily=50000000,
-            etf_flow_weekly=200000000,
-            hy_oas=3.5,
-            yield_curve_2s10s=0.25,
-            initial_claims=220000,
-            anfci=-0.15,
-            fed_bs=6800,
-            rrp=200,
-            tga=750,
-            rsi_daily=42,
-            price_30d_ago=90000,
-            global_m2_growth=3.0,
-            eth_price=2100,
-            eth_btc=0.025,
-            btc_dominance=61.5,
-            timestamp=datetime.now().isoformat(),
-        )
-        inputs.sources = {"demo": "Default values"}
+        inputs = _create_demo_inputs()
 
         result = run_analysis(inputs)
         result["data_source"] = {
@@ -198,11 +217,53 @@ async def get_signal():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
+    import os
+    cg_key = os.environ.get("COINGLASS_API_KEY", "")
+    fred_key = os.environ.get("FRED_API_KEY", "")
     return JSONResponse(content={
         "status": "healthy",
         "model_version": "7.6.0",
         "timestamp": datetime.now().isoformat(),
+        "api_keys": {
+            "coinglass": f"{'SET (' + cg_key[:4] + '...)' if cg_key else 'NOT SET'}",
+            "fred": f"{'SET (' + fred_key[:4] + '...)' if fred_key else 'NOT SET'}",
+        }
     })
+
+
+@app.get("/api/debug")
+async def debug_data():
+    """Debug endpoint showing raw data fetch results and field population status."""
+    try:
+        # Clear cache to force fresh fetch
+        from app.data_service import cache
+        cache.clear()
+
+        inputs = await data_service.collect_all_data()
+        fields = {}
+        for field_name in [
+            "btc_price", "mvrv", "realized_price", "sth_realized_price", "lth_realized_price",
+            "nupl", "fear_greed", "funding_rate", "long_short_ratio", "liquidation_24h",
+            "futures_basis", "put_call_ratio", "max_pain", "options_oi",
+            "etf_flow_daily", "etf_flow_weekly", "etf_cumulative",
+            "coinbase_premium", "btc_dominance", "eth_price", "eth_btc",
+            "hy_oas", "yield_curve_2s10s", "initial_claims", "anfci",
+            "fed_bs", "rrp", "tga", "global_m2_growth", "price_30d_ago",
+        ]:
+            val = getattr(inputs, field_name, None)
+            fields[field_name] = {"value": val, "populated": val is not None and val != 0}
+
+        return JSONResponse(content={
+            "timestamp": datetime.now().isoformat(),
+            "sources": inputs.sources,
+            "warnings": inputs.warnings,
+            "fields": fields,
+            "populated_count": sum(1 for f in fields.values() if f["populated"]),
+            "total_fields": len(fields),
+        })
+    except Exception as e:
+        logger.error(f"Debug error: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.exception_handler(404)

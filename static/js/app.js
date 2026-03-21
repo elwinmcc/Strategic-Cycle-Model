@@ -301,7 +301,8 @@ function updateFooter(data) {
     document.getElementById('last-updated').textContent = 'Last updated: ' + timestamp.toLocaleString();
 
     let statusText = 'Live Data';
-    if (ds.live_data_status === 'demo') statusText = 'Demo Data';
+    if (ds.live_data_status === 'no_data') statusText = 'NO DATA — Check API Keys';
+    else if (ds.live_data_status === 'demo') statusText = 'Demo Data';
     else if (ds.has_manual_overrides) statusText = 'Live + Overrides';
     document.getElementById('data-source').textContent = 'Data: ' + statusText;
     document.getElementById('sources-count').textContent = (ds.sources_count || 0) + ' sources verified';

@@ -51,10 +51,15 @@ class CoinGlassClient:
             resp = await client.get(url, headers=self.headers, params=params or {}, timeout=15)
             resp.raise_for_status()
             data = resp.json()
-            if data.get("code") == "0" or data.get("success"):
-                return data.get("data", data)
+            # v4 returns code as string "0" or integer 0
+            code = data.get("code")
+            if code in ("0", 0) or data.get("success"):
+                result = data.get("data", data)
+                logger.info(f"CoinGlass OK: {endpoint} -> {type(result).__name__} ({len(result) if isinstance(result, (list, dict)) else 'scalar'})")
+                return result
             else:
-                logger.warning(f"CoinGlass warning on {endpoint}: {data.get('msg', 'unknown')}")
+                logger.warning(f"CoinGlass API error on {endpoint}: code={code}, msg={data.get('msg', 'unknown')}")
+                # Still try to return data if present
                 return data.get("data", {})
         except Exception as e:
             logger.error(f"CoinGlass error on {endpoint}: {e}")
@@ -245,11 +250,43 @@ class DataServiceV76:
         inputs.timestamp = datetime.now().isoformat()
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            await asyncio.gather(
+            results = await asyncio.gather(
                 self._fetch_coinglass_data(client, inputs),
                 self._fetch_fred_data(client, inputs),
                 return_exceptions=True,
             )
+            # Log any top-level exceptions
+            for i, r in enumerate(results):
+                if isinstance(r, Exception):
+                    logger.error(f"Data fetch error (task {i}): {r}")
+
+        # Log data population summary
+        populated = []
+        missing = []
+        key_fields = [
+            ("btc_price", inputs.btc_price),
+            ("funding_rate", inputs.funding_rate),
+            ("long_short_ratio", inputs.long_short_ratio),
+            ("etf_flow_weekly", inputs.etf_flow_weekly),
+            ("put_call_ratio", inputs.put_call_ratio),
+            ("max_pain", inputs.max_pain),
+            ("options_oi", inputs.options_oi),
+            ("mvrv", inputs.mvrv),
+            ("fear_greed", inputs.fear_greed),
+            ("hy_oas", inputs.hy_oas),
+            ("anfci", inputs.anfci),
+            ("sth_realized_price", inputs.sth_realized_price),
+            ("lth_realized_price", inputs.lth_realized_price),
+        ]
+        for name, val in key_fields:
+            if val and val != 0 and val != 1.0 and val != 50:
+                populated.append(name)
+            else:
+                missing.append(name)
+        logger.info(f"Data populated: {len(populated)}/{len(key_fields)} fields: {', '.join(populated)}")
+        if missing:
+            logger.warning(f"Data missing: {', '.join(missing)}")
+        logger.info(f"Sources verified: {len(inputs.sources)} — {list(inputs.sources.keys())}")
 
         cache[cache_key] = inputs
         return inputs
@@ -315,16 +352,31 @@ class DataServiceV76:
     def _parse_markets(self, inputs, markets):
         if not markets or isinstance(markets, Exception):
             return
+        # v4 coins-markets returns a list of coin objects
         if isinstance(markets, list) and len(markets) > 0:
             m = markets[0] if isinstance(markets[0], dict) else {}
         elif isinstance(markets, dict):
             m = markets
         else:
             return
-        inputs.btc_price = float(m.get("price", m.get("lastPrice", 0)))
-        inputs.btc_market_cap = float(m.get("marketCap", 0))
-        inputs.oi_total = float(m.get("openInterest", m.get("oiUSD", 0)))
-        inputs.oi_change_24h_pct = float(m.get("oiChange24h", m.get("oiChg24h", 0)))
+        # v4 field names: current_price, market_cap_usd, open_interest_usd, etc.
+        inputs.btc_price = float(m.get("current_price", m.get("price", m.get("lastPrice", 0))))
+        inputs.btc_market_cap = float(m.get("market_cap_usd", m.get("marketCap", 0)))
+        inputs.oi_total = float(m.get("open_interest_usd", m.get("openInterest", 0)))
+        inputs.oi_change_24h_pct = float(m.get("open_interest_change_percent_24h", m.get("oiChange24h", 0)))
+        # v4 also includes funding, liquidation, long/short in coins-markets
+        fr = m.get("avg_funding_rate_by_oi")
+        if fr is not None and inputs.funding_rate == 0:
+            inputs.funding_rate = float(fr)
+            inputs.sources["funding_rate"] = "CoinGlass v4 Markets"
+        liq = m.get("liquidation_usd_24h")
+        if liq is not None and inputs.liquidation_24h == 0:
+            inputs.liquidation_24h = float(liq)
+            inputs.sources["liquidation"] = "CoinGlass v4 Markets"
+        lsr = m.get("long_short_ratio_24h")
+        if lsr is not None and inputs.long_short_ratio == 1.0:
+            inputs.long_short_ratio = float(lsr)
+            inputs.sources["long_short"] = "CoinGlass v4 Markets"
         inputs.sources["btc_price"] = "CoinGlass v4 Markets"
         if inputs.btc_price > 0:
             inputs.drawdown_pct = round((inputs.btc_price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
@@ -335,12 +387,16 @@ class DataServiceV76:
     def _parse_funding(self, inputs, fr_data):
         if isinstance(fr_data, Exception):
             return
+        # Only override if not already set from coins-markets
+        if inputs.funding_rate != 0:
+            return
         if fr_data and isinstance(fr_data, list):
             rates = []
             for x in fr_data:
                 if not isinstance(x, dict):
                     continue
-                r = x.get("rate", x.get("fundingRate"))
+                # v4 field names: rate, fundingRate, or avg_funding_rate
+                r = x.get("rate", x.get("fundingRate", x.get("avg_funding_rate")))
                 if r is not None:
                     try:
                         rates.append(float(r))
@@ -358,9 +414,13 @@ class DataServiceV76:
     def _parse_liquidations(self, inputs, liq_data):
         if isinstance(liq_data, Exception):
             return
+        # Only override if not already set from coins-markets
+        if inputs.liquidation_24h != 0:
+            return
         if liq_data and isinstance(liq_data, list) and len(liq_data) > 0:
             liq = liq_data[0] if isinstance(liq_data[0], dict) else {}
-            inputs.liquidation_24h = float(liq.get("volUsd", liq.get("liquidationUsd", 0)))
+            # v4 field names: liquidation_usd, volUsd, liquidationUsd
+            inputs.liquidation_24h = float(liq.get("liquidation_usd", liq.get("volUsd", liq.get("liquidationUsd", 0))))
             inputs.sources["liquidation"] = "CoinGlass v4"
 
     # ── Parse: Long/Short ───────────────────────────────────────────
@@ -368,6 +428,9 @@ class DataServiceV76:
 
     def _parse_long_short(self, inputs, ls_data):
         if isinstance(ls_data, Exception):
+            return
+        # Only override if not already set from coins-markets
+        if inputs.long_short_ratio != 1.0:
             return
         if ls_data:
             if isinstance(ls_data, list) and len(ls_data) > 0:
@@ -377,10 +440,10 @@ class DataServiceV76:
                 if ratio is not None:
                     inputs.long_short_ratio = float(ratio)
                 else:
-                    # Fallback: compute from longRate/shortRate
-                    long_rate = float(ls.get("longRate", 0.5))
-                    short_rate = max(float(ls.get("shortRate", 0.5)), 0.01)
-                    inputs.long_short_ratio = long_rate / short_rate
+                    # Fallback: compute from long_quantity/short_quantity (v4 names)
+                    long_qty = float(ls.get("long_quantity", ls.get("longRate", 0.5)))
+                    short_qty = max(float(ls.get("short_quantity", ls.get("shortRate", 0.5))), 0.01)
+                    inputs.long_short_ratio = long_qty / short_qty
             elif isinstance(ls_data, dict):
                 inputs.long_short_ratio = float(ls_data.get("long_short_ratio", ls_data.get("ratio", 1.0)))
             inputs.sources["long_short"] = "CoinGlass v4 L/S"
@@ -390,11 +453,18 @@ class DataServiceV76:
     def _parse_etf_flows(self, inputs, etf_flows):
         if isinstance(etf_flows, Exception):
             return
-        if etf_flows and isinstance(etf_flows, list):
+        if not etf_flows:
+            return
+        flow_list = etf_flows
+        # Handle nested format: {"list": [...]} or direct list
+        if isinstance(etf_flows, dict):
+            flow_list = etf_flows.get("list", etf_flows.get("data", []))
+        if isinstance(flow_list, list):
             daily_flows = []
-            for entry in etf_flows[:10]:
+            for entry in flow_list[:10]:
                 if isinstance(entry, dict):
-                    flow = float(entry.get("totalNetFlow", entry.get("netFlow", entry.get("totalFlow", 0))))
+                    # v4 field names: total_net_flow, totalNetFlow, netFlow
+                    flow = float(entry.get("total_net_flow", entry.get("totalNetFlow", entry.get("netFlow", entry.get("totalFlow", 0)))))
                     daily_flows.append(flow)
             if daily_flows:
                 inputs.etf_flow_daily = daily_flows[0]
@@ -404,13 +474,18 @@ class DataServiceV76:
     def _parse_etf_list(self, inputs, etf_list):
         if isinstance(etf_list, Exception):
             return
-        if etf_list and isinstance(etf_list, list):
+        if not etf_list:
+            return
+        items = etf_list
+        if isinstance(etf_list, dict):
+            items = etf_list.get("list", etf_list.get("data", [etf_list]))
+        if isinstance(items, list):
             inputs.etf_cumulative = sum(
-                float(e.get("totalNetFlow", e.get("cumulativeFlow", 0)))
-                for e in etf_list if isinstance(e, dict)
+                float(e.get("total_net_flow", e.get("totalNetFlow", e.get("cumulativeFlow", 0))))
+                for e in items if isinstance(e, dict)
             )
-        elif isinstance(etf_list, dict):
-            inputs.etf_cumulative = float(etf_list.get("totalNetFlow", 0))
+        elif isinstance(items, dict):
+            inputs.etf_cumulative = float(items.get("total_net_flow", items.get("totalNetFlow", 0)))
 
     # ── Parse: Options ──────────────────────────────────────────────
     # v4 option/info returns [{exchange_name, open_interest, open_interest_usd, ...}]
@@ -421,21 +496,22 @@ class DataServiceV76:
             return
         if opt_info:
             if isinstance(opt_info, list) and len(opt_info) > 0:
-                # Look for aggregate "All" entry, or sum individual exchanges
+                # v4 option/info returns per-exchange data with open_interest_usd, volume_usd_24h
+                # Sum total OI across exchanges
                 total_oi = 0
                 for item in opt_info:
                     if not isinstance(item, dict):
                         continue
-                    total_oi += float(item.get("open_interest_usd", item.get("openInterest", 0)))
-                    # putCallRatio may be on aggregate row
-                    pcr = item.get("putCallRatio", item.get("pcRatio"))
+                    total_oi += float(item.get("open_interest_usd", item.get("open_interest", item.get("openInterest", 0))))
+                    # v4 may include put_call_ratio on some rows
+                    pcr = item.get("put_call_ratio", item.get("putCallRatio", item.get("pcRatio")))
                     if pcr is not None and inputs.put_call_ratio == 0:
                         inputs.put_call_ratio = float(pcr)
                 if total_oi > 0:
                     inputs.options_oi = total_oi
                 inputs.sources["options"] = "CoinGlass v4 Options"
             elif isinstance(opt_info, dict):
-                inputs.put_call_ratio = float(opt_info.get("putCallRatio", opt_info.get("pcRatio", 0)))
+                inputs.put_call_ratio = float(opt_info.get("put_call_ratio", opt_info.get("putCallRatio", 0)))
                 inputs.options_oi = float(opt_info.get("open_interest_usd", opt_info.get("openInterest", 0)))
                 inputs.sources["options"] = "CoinGlass v4 Options"
 
@@ -444,9 +520,20 @@ class DataServiceV76:
             return
         if max_pain:
             if isinstance(max_pain, dict):
-                inputs.max_pain = float(max_pain.get("maxPain", max_pain.get("price", 0)))
+                # v4: max_pain or maxPain field
+                inputs.max_pain = float(max_pain.get("max_pain", max_pain.get("maxPain", max_pain.get("price", 0))))
+                # v4 may include put_call_ratio here
+                pcr = max_pain.get("put_call_ratio", max_pain.get("putCallRatio"))
+                if pcr is not None and inputs.put_call_ratio == 0:
+                    inputs.put_call_ratio = float(pcr)
+                    inputs.sources["put_call"] = "CoinGlass v4 Max Pain"
             elif isinstance(max_pain, list) and len(max_pain) > 0:
-                inputs.max_pain = float(max_pain[0].get("maxPain", max_pain[0].get("strikePrice", 0)))
+                entry = max_pain[0] if isinstance(max_pain[0], dict) else {}
+                inputs.max_pain = float(entry.get("max_pain", entry.get("maxPain", entry.get("strikePrice", 0))))
+                pcr = entry.get("put_call_ratio", entry.get("putCallRatio"))
+                if pcr is not None and inputs.put_call_ratio == 0:
+                    inputs.put_call_ratio = float(pcr)
+                    inputs.sources["put_call"] = "CoinGlass v4 Max Pain"
             inputs.sources["max_pain"] = "CoinGlass v4 Max Pain"
 
     # ── Parse: STH/LTH Realized Price ──────────────────────────────
@@ -455,7 +542,25 @@ class DataServiceV76:
     def _parse_sth(self, inputs, sth):
         if isinstance(sth, Exception):
             return
-        if sth and isinstance(sth, list) and len(sth) > 0:
+        if not sth:
+            return
+        # Handle both list and dict responses
+        if isinstance(sth, dict):
+            # v4 might return data nested in a dict
+            if "price_list" in sth and "data_list" in sth:
+                data_list = sth.get("data_list", [])
+                if data_list:
+                    inputs.sth_realized_price = float(data_list[-1])
+                    inputs.sources["sth_price"] = "CoinGlass v4 STH RP"
+                    return
+        if isinstance(sth, list) and len(sth) > 0:
+            if isinstance(sth[0], dict) and "data_list" in sth[0]:
+                # Nested array format like fear & greed
+                data_list = sth[0].get("data_list", [])
+                if data_list:
+                    inputs.sth_realized_price = float(data_list[-1])
+                    inputs.sources["sth_price"] = "CoinGlass v4 STH RP"
+                    return
             entry = sth[-1] if isinstance(sth[-1], dict) else sth[0]
             inputs.sth_realized_price = float(
                 entry.get("sth_realized_price", entry.get("price", entry.get("value", 0)))
@@ -465,7 +570,23 @@ class DataServiceV76:
     def _parse_lth(self, inputs, lth):
         if isinstance(lth, Exception):
             return
-        if lth and isinstance(lth, list) and len(lth) > 0:
+        if not lth:
+            return
+        # Handle both list and dict responses
+        if isinstance(lth, dict):
+            if "price_list" in lth and "data_list" in lth:
+                data_list = lth.get("data_list", [])
+                if data_list:
+                    inputs.lth_realized_price = float(data_list[-1])
+                    inputs.sources["lth_price"] = "CoinGlass v4 LTH RP"
+                    return
+        if isinstance(lth, list) and len(lth) > 0:
+            if isinstance(lth[0], dict) and "data_list" in lth[0]:
+                data_list = lth[0].get("data_list", [])
+                if data_list:
+                    inputs.lth_realized_price = float(data_list[-1])
+                    inputs.sources["lth_price"] = "CoinGlass v4 LTH RP"
+                    return
             entry = lth[-1] if isinstance(lth[-1], dict) else lth[0]
             inputs.lth_realized_price = float(
                 entry.get("lth_realized_price", entry.get("price", entry.get("value", 0)))
@@ -490,10 +611,25 @@ class DataServiceV76:
     def _parse_nupl(self, inputs, nupl_data):
         if isinstance(nupl_data, Exception):
             return
-        if nupl_data and isinstance(nupl_data, list) and len(nupl_data) > 0:
+        if not nupl_data:
+            return
+        # Handle nested array format (data_list/price_list/time_list)
+        if isinstance(nupl_data, list) and len(nupl_data) > 0:
+            if isinstance(nupl_data[0], dict) and "data_list" in nupl_data[0]:
+                data_list = nupl_data[0].get("data_list", [])
+                if data_list:
+                    inputs.nupl = float(data_list[-1])
+                    inputs.sources["nupl"] = "CoinGlass v4 NUPL"
+                    return
             entry = nupl_data[-1] if isinstance(nupl_data[-1], dict) else nupl_data[0]
             inputs.nupl = float(entry.get("net_unpnl", entry.get("nupl", entry.get("value", 0))))
             inputs.sources["nupl"] = "CoinGlass v4 NUPL"
+        elif isinstance(nupl_data, dict):
+            if "data_list" in nupl_data:
+                data_list = nupl_data.get("data_list", [])
+                if data_list:
+                    inputs.nupl = float(data_list[-1])
+                    inputs.sources["nupl"] = "CoinGlass v4 NUPL"
 
     # ── Parse: Fear & Greed ─────────────────────────────────────────
     # v4 response: [{data_list: [...], price_list: [...], time_list: [...]}]
@@ -544,12 +680,27 @@ class DataServiceV76:
     def _parse_dominance(self, inputs, dom):
         if isinstance(dom, Exception):
             return
-        if dom and isinstance(dom, list) and len(dom) > 0:
+        if not dom:
+            return
+        # Handle nested array format
+        if isinstance(dom, list) and len(dom) > 0:
+            if isinstance(dom[0], dict) and "data_list" in dom[0]:
+                data_list = dom[0].get("data_list", [])
+                if data_list:
+                    inputs.btc_dominance = float(data_list[-1])
+                    inputs.sources["dominance"] = "CoinGlass v4"
+                    return
             entry = dom[-1] if isinstance(dom[-1], dict) else dom[0]
             inputs.btc_dominance = float(
                 entry.get("bitcoin_dominance", entry.get("dominance", entry.get("value", 0)))
             )
             inputs.sources["dominance"] = "CoinGlass v4"
+        elif isinstance(dom, dict):
+            if "data_list" in dom:
+                data_list = dom.get("data_list", [])
+                if data_list:
+                    inputs.btc_dominance = float(data_list[-1])
+                    inputs.sources["dominance"] = "CoinGlass v4"
 
     # ── Parse: Coinbase Premium ─────────────────────────────────────
     # v4 response: [{time, premium, premium_rate}]
@@ -571,34 +722,65 @@ class DataServiceV76:
     def _parse_basis(self, inputs, basis):
         if isinstance(basis, Exception):
             return
-        if basis:
-            if isinstance(basis, list) and len(basis) > 0:
-                entry = basis[-1] if isinstance(basis[-1], dict) else basis[0]
-                inputs.futures_basis = float(entry.get("basis", entry.get("annualizedBasis", 0)))
-            elif isinstance(basis, dict):
-                inputs.futures_basis = float(basis.get("basis", basis.get("annualizedBasis", 0)))
-            inputs.sources["basis"] = "CoinGlass v4 Basis"
+        if not basis:
+            return
+        if isinstance(basis, list) and len(basis) > 0:
+            entry = basis[-1] if isinstance(basis[-1], dict) else basis[0]
+            # v4 field names: close_basis_rate, basis, annualizedBasis
+            val = entry.get("close_basis_rate", entry.get("basis", entry.get("annualizedBasis", 0)))
+            inputs.futures_basis = float(val) if val else 0
+        elif isinstance(basis, dict):
+            val = basis.get("close_basis_rate", basis.get("basis", basis.get("annualizedBasis", 0)))
+            inputs.futures_basis = float(val) if val else 0
+        inputs.sources["basis"] = "CoinGlass v4 Basis"
 
     # ── Parse: Global M2 ───────────────────────────────────────────
 
     def _parse_m2(self, inputs, m2):
         if isinstance(m2, Exception):
             return
-        if m2 and isinstance(m2, list) and len(m2) > 0:
+        if not m2:
+            return
+        # Handle nested array format (data_list/price_list/time_list)
+        if isinstance(m2, list) and len(m2) > 0:
+            if isinstance(m2[0], dict) and "data_list" in m2[0]:
+                data_list = m2[0].get("data_list", [])
+                if data_list:
+                    inputs.global_m2_growth = float(data_list[-1])
+                    inputs.sources["global_m2"] = "CoinGlass v4 M2"
+                    return
             entry = m2[-1] if isinstance(m2[-1], dict) else m2[0]
             inputs.global_m2_growth = float(
-                entry.get("m2Growth", entry.get("growthRate", entry.get("value", 0)))
+                entry.get("m2_growth", entry.get("m2Growth", entry.get("growthRate", entry.get("value", 0))))
             )
             inputs.sources["global_m2"] = "CoinGlass v4 M2"
+        elif isinstance(m2, dict):
+            if "data_list" in m2:
+                data_list = m2.get("data_list", [])
+                if data_list:
+                    inputs.global_m2_growth = float(data_list[-1])
+                    inputs.sources["global_m2"] = "CoinGlass v4 M2"
 
     # ── Parse: Price History (OHLC) ─────────────────────────────────
 
     def _parse_ohlc(self, inputs, ohlc):
         if isinstance(ohlc, Exception):
             return
-        if ohlc and isinstance(ohlc, list) and len(ohlc) > 25:
-            if isinstance(ohlc[0], dict):
-                inputs.price_30d_ago = float(ohlc[-30].get("close", ohlc[-30].get("c", 0)))
+        if not ohlc:
+            return
+        items = ohlc
+        # Handle nested format
+        if isinstance(ohlc, dict):
+            items = ohlc.get("list", ohlc.get("data", []))
+        if isinstance(items, list) and len(items) > 25:
+            if isinstance(items[0], dict):
+                # v4 field names: close or c
+                entry = items[-30] if len(items) >= 30 else items[0]
+                inputs.price_30d_ago = float(entry.get("close", entry.get("c", 0)))
+                inputs.sources["price_history"] = "CoinGlass v4 OHLC"
+            elif isinstance(items[0], (int, float)):
+                # May be a flat list of prices (price_list format)
+                inputs.price_30d_ago = float(items[-30] if len(items) >= 30 else items[0])
                 inputs.sources["price_history"] = "CoinGlass v4 OHLC"
 
     # ── Parse: ETH ──────────────────────────────────────────────────
@@ -613,7 +795,8 @@ class DataServiceV76:
                 em = eth_markets
             else:
                 return
-            inputs.eth_price = float(em.get("price", em.get("lastPrice", 0)))
+            # v4 field name: current_price
+            inputs.eth_price = float(em.get("current_price", em.get("price", em.get("lastPrice", 0))))
             if inputs.btc_price > 0 and inputs.eth_price > 0:
                 inputs.eth_btc = round(inputs.eth_price / inputs.btc_price, 5)
             inputs.sources["eth_price"] = "CoinGlass v4 Markets"
