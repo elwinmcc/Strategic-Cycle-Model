@@ -65,6 +65,13 @@ class CoinGlassClient:
             logger.error(f"CG exception {endpoint}: {e}")
             return None
 
+    # ── Futures OI Exchange List (also provides BTC price) ─────────
+    # Response: [{"exchange":"All","symbol":"BTC","open_interest_usd":46817313373,"open_interest_quantity":665799,...}]
+    # BTC price = open_interest_usd / open_interest_quantity (real-time futures-derived)
+
+    async def get_oi_exchange_list(self, client, symbol="BTC"):
+        return await self._get(client, "futures/open-interest/exchange-list", {"symbol": symbol})
+
     # ── Funding Rates ───────────────────────────────────────────────
     # Response: {"data": [{"symbol":"BTC", "stablecoin_margin_list":[{"exchange":"Binance","funding_rate":0.001,...},...]}]}
 
@@ -224,26 +231,28 @@ class DataServiceV76:
         logger.info("Fetching CoinGlass v4 data...")
 
         results = await asyncio.gather(
-            self.cg.get_funding_rates(client),       # 0
-            self.cg.get_liquidations(client),         # 1
-            self.cg.get_etf_flows(client, 10),        # 2
-            self.cg.get_etf_list(client),             # 3
-            self.cg.get_options_info(client),          # 4
-            self.cg.get_options_max_pain(client),      # 5
-            self.cg.get_sth_realized(client),          # 6
-            self.cg.get_lth_realized(client),          # 7
-            self.cg.get_nupl(client),                  # 8
-            self.cg.get_fear_greed(client),            # 9
-            self.cg.get_dominance(client),             # 10
-            self.cg.get_coinbase_premium(client),      # 11
-            self.cg.get_global_m2(client),             # 12
+            self.cg.get_oi_exchange_list(client),     # 0  ← futures OI (BTC price)
+            self.cg.get_funding_rates(client),         # 1
+            self.cg.get_liquidations(client),          # 2
+            self.cg.get_etf_flows(client, 10),         # 3
+            self.cg.get_etf_list(client),              # 4
+            self.cg.get_options_info(client),           # 5
+            self.cg.get_options_max_pain(client),       # 6
+            self.cg.get_sth_realized(client),           # 7
+            self.cg.get_lth_realized(client),           # 8
+            self.cg.get_nupl(client),                   # 9
+            self.cg.get_fear_greed(client),             # 10
+            self.cg.get_dominance(client),              # 11
+            self.cg.get_coinbase_premium(client),       # 12
+            self.cg.get_global_m2(client),              # 13
             return_exceptions=True,
         )
 
-        (funding, liq, etf_flows, etf_list, opt_info, max_pain,
+        (oi_exch, funding, liq, etf_flows, etf_list, opt_info, max_pain,
          sth, lth, nupl_data, fg, dom, prem, m2) = results
 
-        # Parse in order: ETF flows first (provides BTC market price from futures/ETF)
+        # Parse in order: OI exchange list first (provides real-time futures BTC price)
+        self._parse_oi_exchange_list(inputs, oi_exch)
         self._parse_etf_flows(inputs, etf_flows)
         self._parse_sth(inputs, sth)
         self._parse_lth(inputs, lth)
@@ -258,6 +267,33 @@ class DataServiceV76:
         self._parse_dominance(inputs, dom)
         self._parse_premium(inputs, prem)
         self._parse_m2(inputs, m2)
+
+    # ── Parse: Futures OI Exchange List (primary BTC price source) ──
+    # Live response: [{"exchange":"All","symbol":"BTC","open_interest_usd":46817313373,"open_interest_quantity":665799,...}]
+    # BTC futures price = open_interest_usd / open_interest_quantity
+
+    def _parse_oi_exchange_list(self, inputs, oi_data):
+        if not oi_data or isinstance(oi_data, Exception):
+            return
+        if not isinstance(oi_data, list):
+            return
+        for row in oi_data:
+            if not isinstance(row, dict):
+                continue
+            if row.get("exchange") == "All":
+                oi_usd = float(row.get("open_interest_usd", 0))
+                oi_qty = float(row.get("open_interest_quantity", 0))
+                if oi_usd > 0 and oi_qty > 0:
+                    price = oi_usd / oi_qty
+                    inputs.btc_price = round(price, 2)
+                    inputs.sources["btc_price"] = "CoinGlass v4 Futures OI (real-time)"
+                    inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
+                # Store futures OI data
+                inputs.oi_total = oi_usd
+                oi_chg = float(row.get("open_interest_change_percent_24h", 0))
+                inputs.oi_change_24h_pct = oi_chg
+                inputs.sources["futures_oi"] = "CoinGlass v4 OI Exchange List"
+                break
 
     # ── Parse: STH Realized Price ─────────────────────────────────
     # Live response: [{"timestamp":..., "price":71250, "sth_realized_price":85974}, ...]
@@ -386,27 +422,25 @@ class DataServiceV76:
 
     # ── Parse: ETF Flows ───────────────────────────────────────────
     # Live response: [{"timestamp":..., "flow_usd":655300000, "price_usd":69887.4, "etf_flows":[...]}, ...]
-    # NOTE: price_usd here is the BTC market price at ETF close — used as primary price source
-    # since futures/coins-markets and futures/price/history require plan upgrade.
+    # price_usd is ETF close price — used as fallback if futures OI price unavailable.
 
     def _parse_etf_flows(self, inputs, etf_flows):
         if not etf_flows or isinstance(etf_flows, Exception):
             return
         if isinstance(etf_flows, list):
-            # Sort by timestamp descending to get most recent first
             sorted_flows = sorted(
                 [e for e in etf_flows if isinstance(e, dict)],
                 key=lambda x: x.get("timestamp", 0),
                 reverse=True,
             )
-            # BTC price from the most recent ETF entry
-            if sorted_flows:
+            # Fallback price from ETF if futures OI didn't provide one
+            if inputs.btc_price == 0 and sorted_flows:
                 price = float(sorted_flows[0].get("price_usd", 0))
                 if price > 0:
                     inputs.btc_price = price
-                    inputs.sources["btc_price"] = "CoinGlass v4 ETF (market price)"
+                    inputs.sources["btc_price"] = "CoinGlass v4 ETF (fallback)"
                     inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
-            # Compute flows (entries come from API in ascending order)
+            # Compute flows
             daily_flows = []
             for entry in sorted_flows:
                 flow = float(entry.get("flow_usd", 0))
