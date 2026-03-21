@@ -280,12 +280,13 @@ class DataServiceV76:
             self.cg.get_long_short_ratio(client),       # 15
             self.cg.get_futures_basis(client),          # 16
             self.cg.get_rsi(client),                    # 17
+            self.cg.get_coins_markets(client, "ETH"),  # 18  ← ETH price
             return_exceptions=True,
         )
 
         (coins_mkts, oi_exch, funding, liq, etf_flows, etf_list, opt_info,
          max_pain, sth, lth, nupl_data, fg, dom, prem, m2,
-         ls_ratio, basis, rsi) = results
+         ls_ratio, basis, rsi, eth_mkts) = results
 
         # Parse in order: coins-markets first (proper BTC price)
         self._parse_coins_markets(inputs, coins_mkts)
@@ -307,6 +308,7 @@ class DataServiceV76:
         self._parse_dominance(inputs, dom)
         self._parse_premium(inputs, prem)
         self._parse_m2(inputs, m2)
+        self._parse_eth_markets(inputs, eth_mkts)
 
     # ── Parse: Coins Markets (primary BTC price) ───────────────────
     # Live response: [{"symbol":"BTC","price":84500.12,...}]
@@ -331,6 +333,29 @@ class DataServiceV76:
                 inputs.sources["btc_price"] = "CoinGlass v4 coins-markets"
                 inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
 
+    # ── Parse: ETH Markets (ETH price + ETH/BTC) ───────────────────
+    # Same endpoint as BTC coins-markets but with symbol=ETH
+
+    def _parse_eth_markets(self, inputs, data):
+        if not data or isinstance(data, Exception):
+            return
+        eth_price = 0.0
+        if isinstance(data, list):
+            for row in data:
+                if isinstance(row, dict):
+                    p = float(row.get("price", 0))
+                    if p > 0:
+                        eth_price = p
+                        break
+        elif isinstance(data, dict):
+            eth_price = float(data.get("price", 0))
+        if eth_price > 0:
+            inputs.eth_price = round(eth_price, 2)
+            inputs.sources["eth_price"] = "CoinGlass v4 coins-markets (ETH)"
+            if inputs.btc_price > 0:
+                inputs.eth_btc = round(eth_price / inputs.btc_price, 6)
+                inputs.sources["eth_btc"] = "Calculated (ETH/BTC)"
+
     # ── Parse: Futures OI Exchange List ──────────────────────────────
     # Live response: [{"exchange":"All","symbol":"BTC","open_interest_usd":46817313373,"open_interest_quantity":665799,...}]
     # Provides OI data; BTC price fallback if coins-markets unavailable.
@@ -354,8 +379,18 @@ class DataServiceV76:
                     inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
                 # Store futures OI data
                 inputs.oi_total = oi_usd
-                oi_chg = float(row.get("open_interest_change_percent_24h", 0))
-                inputs.oi_change_24h_pct = oi_chg
+                # Try known field name variants for 24h OI change
+                oi_chg = None
+                for key in ("open_interest_change_percent_24h", "h24OiChangePercent",
+                            "oiChangePercent24H", "oiChangePercent", "changePercent24H"):
+                    if key in row and row[key] is not None:
+                        oi_chg = float(row[key])
+                        break
+                if oi_chg is not None:
+                    inputs.oi_change_24h_pct = oi_chg
+                else:
+                    # Log all keys so we can identify the correct field
+                    logger.warning(f"OI change field not found. Available keys: {list(row.keys())}")
                 inputs.sources["futures_oi"] = "CoinGlass v4 OI Exchange List"
                 break
 
@@ -488,17 +523,24 @@ class DataServiceV76:
         if isinstance(data, list) and len(data) > 0:
             entry = data[-1] if isinstance(data[-1], dict) else data[0]
             if isinstance(entry, dict):
-                ratio = entry.get("longShortRatio")
+                # Try known field name variants
+                ratio = None
+                for key in ("longShortRatio", "long_short_ratio", "longShortAccountRatio"):
+                    if key in entry and entry[key] is not None:
+                        ratio = float(entry[key])
+                        break
                 if ratio is not None:
-                    inputs.long_short_ratio = round(float(ratio), 2)
+                    inputs.long_short_ratio = round(ratio, 2)
                     inputs.sources["long_short"] = "CoinGlass v4 Global L/S Ratio"
                 else:
-                    # Some responses use longRate/shortRate
-                    long_r = float(entry.get("longRate", 0))
-                    short_r = float(entry.get("shortRate", 0))
+                    # Fallback: compute from longRate/shortRate
+                    long_r = float(entry.get("longRate", entry.get("long_rate", 0)))
+                    short_r = float(entry.get("shortRate", entry.get("short_rate", 0)))
                     if short_r > 0:
                         inputs.long_short_ratio = round(long_r / short_r, 2)
                         inputs.sources["long_short"] = "CoinGlass v4 Global L/S Ratio"
+                    else:
+                        logger.warning(f"L/S ratio field not found. Available keys: {list(entry.keys())}")
 
     # ── Parse: Futures Basis ─────────────────────────────────────────
     # Live response: [{"time":...,"openBasis":5.2,"closeBasis":5.1,"annualizedBasis":8.3,...}]
@@ -506,16 +548,26 @@ class DataServiceV76:
     def _parse_futures_basis(self, inputs, data):
         if not data or isinstance(data, Exception):
             return
+        # Handle both list and dict responses
+        entry = None
         if isinstance(data, list) and len(data) > 0:
             entry = data[-1] if isinstance(data[-1], dict) else data[0]
-            if isinstance(entry, dict):
-                # Prefer annualized basis; fall back to closeBasis
-                basis = entry.get("annualizedBasis")
-                if basis is None:
-                    basis = entry.get("closeBasis")
-                if basis is not None:
-                    inputs.futures_basis = round(float(basis), 2)
-                    inputs.sources["futures_basis"] = "CoinGlass v4 Futures Basis"
+        elif isinstance(data, dict):
+            entry = data
+        if not isinstance(entry, dict):
+            return
+        # Try known field name variants for basis value
+        basis = None
+        for key in ("annualizedBasis", "closeBasis", "openBasis", "basis",
+                     "annualized_basis", "close_basis", "basisRate", "basis_rate"):
+            if key in entry and entry[key] is not None:
+                basis = float(entry[key])
+                break
+        if basis is not None:
+            inputs.futures_basis = round(basis, 2)
+            inputs.sources["futures_basis"] = "CoinGlass v4 Futures Basis"
+        else:
+            logger.warning(f"Basis field not found. Available keys: {list(entry.keys())}")
 
     # ── Parse: RSI ───────────────────────────────────────────────────
     # Live response: [{"symbol":"BTC","rsi_24h":55.3,...}]
@@ -523,20 +575,28 @@ class DataServiceV76:
     def _parse_rsi(self, inputs, data):
         if not data or isinstance(data, Exception):
             return
+        # Extract entry from list or dict
+        entry = None
         if isinstance(data, list):
             for row in data:
-                if not isinstance(row, dict):
-                    continue
-                rsi = row.get("rsi_24h")
-                if rsi is not None:
-                    inputs.rsi_daily = round(float(rsi), 1)
-                    inputs.sources["rsi"] = "CoinGlass v4 RSI"
+                if isinstance(row, dict):
+                    entry = row
                     break
         elif isinstance(data, dict):
-            rsi = data.get("rsi_24h")
-            if rsi is not None:
-                inputs.rsi_daily = round(float(rsi), 1)
-                inputs.sources["rsi"] = "CoinGlass v4 RSI"
+            entry = data
+        if not isinstance(entry, dict):
+            return
+        # Try known field name variants
+        rsi = None
+        for key in ("rsi_24h", "rsi24H", "rsi", "RSI", "rsi_1d", "rsiValue"):
+            if key in entry and entry[key] is not None:
+                rsi = float(entry[key])
+                break
+        if rsi is not None:
+            inputs.rsi_daily = round(rsi, 1)
+            inputs.sources["rsi"] = "CoinGlass v4 RSI"
+        else:
+            logger.warning(f"RSI field not found. Available keys: {list(entry.keys())}")
 
     # ── Parse: ETF Flows ───────────────────────────────────────────
     # Live response: [{"timestamp":..., "flow_usd":655300000, "price_usd":69887.4, "etf_flows":[...]}, ...]
