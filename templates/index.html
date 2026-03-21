@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bitcoin Strategic Cycle Model v7.1</title>
+    <title>BTC Econometric Model v7.6</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -15,14 +14,14 @@
         <!-- Header -->
         <header class="header">
             <div class="header-left">
-                <h1>BTC Strategic Cycle Model <span class="version">v7.1</span></h1>
-                <p class="tagline">"The Liquidity Thesis" - Buy value, sell euphoria</p>
+                <h1>BTC Econometric Model <span class="version">v7.6</span></h1>
+                <p class="tagline">CoinGlass API + FRED | 12-Layer Scoring Engine</p>
             </div>
             <div class="header-right">
                 <div class="price-display">
                     <span class="label">BTC</span>
                     <span class="price" id="btc-price">$--,---</span>
-                    <span class="change" id="btc-change">--%</span>
+                    <span class="change" id="btc-drawdown">--%</span>
                 </div>
                 <button class="btn-refresh" onclick="refreshData()">
                     <span class="refresh-icon">&#8635;</span> Refresh
@@ -30,20 +29,32 @@
             </div>
         </header>
 
-        <!-- Main Signal Card -->
+        <!-- Signal Banner -->
         <section class="signal-card" id="signal-card">
             <div class="signal-header">
                 <span class="signal-label">SIGNAL</span>
                 <span class="signal-value" id="signal-value">LOADING...</span>
             </div>
             <div class="signal-details">
-                <div class="allocation">
+                <div class="signal-detail">
+                    <span class="label">Score</span>
+                    <span class="value" id="signal-score">--</span>
+                </div>
+                <div class="signal-detail">
                     <span class="label">Allocation</span>
                     <span class="value" id="allocation-value">--%</span>
                 </div>
-                <div class="confidence">
+                <div class="signal-detail">
                     <span class="label">Confidence</span>
                     <span class="value" id="confidence-value">--</span>
+                </div>
+                <div class="signal-detail">
+                    <span class="label">Macro Phase</span>
+                    <span class="value" id="macro-phase">--</span>
+                </div>
+                <div class="signal-detail">
+                    <span class="label">BTC Cycle</span>
+                    <span class="value" id="btc-cycle">--</span>
                 </div>
             </div>
             <div class="signal-rationale" id="signal-rationale">
@@ -51,660 +62,203 @@
             </div>
         </section>
 
-        <!-- Overall Composite Score -->
-        <section class="composite-score-section" id="composite-section">
-            <div class="composite-header">
-                <h2>Overall Cycle Score</h2>
-                <div class="composite-main">
-                    <span class="composite-value" id="composite-score">--</span>
-                    <span class="composite-rating" id="composite-rating">--</span>
+        <!-- Score Gauge -->
+        <section class="score-section">
+            <div class="score-header">
+                <h2>Composite Score</h2>
+                <div class="score-main">
+                    <span class="score-value" id="composite-score">--</span>
+                    <span class="score-max">/100</span>
                 </div>
             </div>
-            <div class="composite-gauge">
+            <div class="score-gauge">
                 <div class="gauge-track">
                     <div class="gauge-fill" id="composite-gauge-fill"></div>
                 </div>
                 <div class="gauge-labels">
+                    <span>Strong Sell</span>
                     <span>Sell</span>
-                    <span>Reduce</span>
                     <span>Hold</span>
                     <span>Buy</span>
-                    <span>Strong Buy</span>
+                    <span>Aggressive Buy</span>
                 </div>
             </div>
-            <div class="composite-components" id="composite-components">
-                <div class="component">
-                    <span class="comp-label">Valuation</span>
-                    <div class="comp-bar"><div class="comp-fill" id="comp-valuation"></div></div>
-                    <span class="comp-value" id="comp-valuation-val">--</span>
-                </div>
-                <div class="component">
-                    <span class="comp-label">Liquidity</span>
-                    <div class="comp-bar"><div class="comp-fill" id="comp-liquidity"></div></div>
-                    <span class="comp-value" id="comp-liquidity-val">--</span>
-                </div>
-                <div class="component">
-                    <span class="comp-label">Trend</span>
-                    <div class="comp-bar"><div class="comp-fill" id="comp-trend"></div></div>
-                    <span class="comp-value" id="comp-trend-val">--</span>
-                </div>
-                <div class="component">
-                    <span class="comp-label">Biz Cycle</span>
-                    <div class="comp-bar"><div class="comp-fill" id="comp-bizcycle"></div></div>
-                    <span class="comp-value" id="comp-bizcycle-val">--</span>
-                </div>
-                <div class="component">
-                    <span class="comp-label">Phase</span>
-                    <div class="comp-bar"><div class="comp-fill" id="comp-phase"></div></div>
-                    <span class="comp-value" id="comp-phase-val">--</span>
-                </div>
-                <div class="component">
-                    <span class="comp-label">Sentiment</span>
-                    <div class="comp-bar"><div class="comp-fill" id="comp-sentiment"></div></div>
-                    <span class="comp-value" id="comp-sentiment-val">--</span>
-                </div>
-            </div>
-            <div class="composite-action" id="composite-action">
-                Loading recommendation...
+            <div class="score-adjustments" id="score-adjustments">
+                <!-- Populated by JS -->
             </div>
         </section>
 
-        <!-- Main Grid -->
-        <div class="dashboard-grid">
-            <!-- Valuation Card -->
-            <section class="card valuation-card">
-                <h2>Valuation</h2>
-                <div class="metric-row">
-                    <div class="metric">
-                        <span class="metric-label">MVRV</span>
-                        <span class="metric-value" id="mvrv-value">--</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">Zone</span>
-                        <span class="metric-value zone-badge" id="value-zone">--</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">Fear & Greed</span>
-                        <span class="metric-value fear-greed-badge" id="fear-greed">--</span>
-                    </div>
-                </div>
-                <div class="mvrv-gauge" id="mvrv-gauge">
-                    <div class="gauge-fill" id="mvrv-fill"></div>
-                    <div class="gauge-labels">
-                        <span>Deep Value</span>
-                        <span>Value</span>
-                        <span>Fair</span>
-                        <span>Extended</span>
-                        <span>Euphoria</span>
-                    </div>
-                </div>
-                <div class="metric-row">
-                    <div class="metric small">
-                        <span class="metric-label">Power Law Fair</span>
-                        <span class="metric-value" id="pl-fair">$--</span>
-                    </div>
-                    <div class="metric small">
-                        <span class="metric-label">Deviation</span>
-                        <span class="metric-value" id="pl-dev">--%</span>
-                    </div>
-                </div>
-                <div class="buy-zone-indicator" id="buy-zone-indicator">
-                    <span class="indicator-dot"></span>
-                    <span class="indicator-text">Loading...</span>
-                </div>
-            </section>
-
-            <!-- Cycle Phase Card -->
-            <section class="card phase-card">
-                <h2>Cycle Phase</h2>
-                <div class="phase-display">
-                    <span class="phase-name" id="phase-name">--</span>
-                    <span class="phase-confidence" id="phase-confidence">--% conf</span>
-                </div>
-                <div class="cycle-progress">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="cycle-progress-fill"></div>
-                    </div>
-                    <span class="progress-text" id="cycle-progress-text">--% complete</span>
-                </div>
-                <div class="phase-transition">
-                    <span class="label">Next Phase</span>
-                    <span class="value" id="next-phase">--</span>
-                    <span class="probability" id="transition-prob">--% prob</span>
-                </div>
-                <div class="phase-timeline" id="phase-timeline">
-                    Timeline: --
-                </div>
-            </section>
-
-            <!-- Liquidity Card -->
-            <section class="card liquidity-card">
-                <h2>Liquidity</h2>
-                <div class="regime-badge" id="liq-regime">--</div>
-                <div class="metric-grid">
-                    <div class="metric">
-                        <span class="metric-label">Net Liquidity</span>
-                        <span class="metric-value" id="net-liq">$--T</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">RRP Depleted</span>
-                        <span class="metric-value" id="rrp-depleted">--%</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">Fed BS (90d)</span>
-                        <span class="metric-value" id="fed-90d">--%</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">M2 YoY</span>
-                        <span class="metric-value" id="m2-yoy">--%</span>
-                    </div>
-                </div>
-                <div class="liq-score">
-                    <span class="label">Liquidity Score</span>
-                    <div class="score-bar">
-                        <div class="score-fill" id="liq-score-fill"></div>
-                    </div>
-                    <span class="score-value" id="liq-score">--/100</span>
-                </div>
-            </section>
-
-            <!-- Top Detection Card -->
-            <section class="card top-card">
-                <h2>Top Detection</h2>
-                <div class="warning-level" id="warning-level">
-                    <span class="warning-badge">--</span>
-                    <span class="warning-score" id="top-score">--/100</span>
-                </div>
-                <div class="top-indicators" id="top-indicators">
-                    <!-- Indicators will be populated by JS -->
-                </div>
-            </section>
-
-            <!-- Business Cycle Card -->
-            <section class="card business-card">
-                <h2>Business Cycle</h2>
-                <div class="stage-badge" id="biz-stage">--</div>
-                <div class="metric-grid">
-                    <div class="metric">
-                        <span class="metric-label">ISM Mfg</span>
-                        <span class="metric-value" id="ism-mfg">--</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">ISM Svc</span>
-                        <span class="metric-value" id="ism-svc">--</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">ISM Preview</span>
-                        <span class="metric-value" id="ism-preview">--</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">Regional Fed</span>
-                        <span class="metric-value" id="regional-signal">--</span>
-                    </div>
-                </div>
-                <div class="early-warning" id="early-warning">
-                    <!-- Early warning indicator -->
-                </div>
-            </section>
-
-            <!-- BTC Trends Card -->
-            <section class="card trends-card">
-                <h2>BTC Trends</h2>
-                <div class="alignment-badge" id="trend-alignment">--</div>
-                <div class="timeframes">
-                    <div class="timeframe" id="tf-stf">
-                        <span class="tf-label">STF (Days-2W)</span>
-                        <span class="tf-trend">--</span>
-                        <span class="tf-momentum">--%</span>
-                    </div>
-                    <div class="timeframe" id="tf-mtf">
-                        <span class="tf-label">MTF (2W-3M)</span>
-                        <span class="tf-trend">--</span>
-                        <span class="tf-momentum">--%</span>
-                    </div>
-                    <div class="timeframe" id="tf-ltf">
-                        <span class="tf-label">LTF (3M-1Y+)</span>
-                        <span class="tf-trend">--</span>
-                        <span class="tf-momentum">--%</span>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Alt Rotation Card -->
-            <section class="card alts-card">
-                <h2>Alt Rotation</h2>
-                <div class="alt-phase-badge" id="alt-phase">--</div>
-                <div class="alt-trend-badge" id="alt-trend">--</div>
-                <div class="metric-grid">
-                    <div class="metric">
-                        <span class="metric-label">ETH Price</span>
-                        <span class="metric-value" id="eth-price">$--</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">ETH/BTC</span>
-                        <span class="metric-value" id="eth-btc">--%</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">BTC Dom</span>
-                        <span class="metric-value" id="btc-dom">--%</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">OTHERS vs BTC</span>
-                        <span class="metric-value" id="others-btc">--%</span>
-                    </div>
-                </div>
-                <div class="allocation-suggestion">
-                    <h3>Suggested Allocation</h3>
-                    <div class="alloc-bars" id="alloc-bars">
-                        <div class="alloc-item">
-                            <span class="alloc-label">BTC</span>
-                            <div class="alloc-bar"><div class="alloc-fill btc" id="alloc-btc"></div></div>
-                            <span class="alloc-pct" id="alloc-btc-pct">--%</span>
-                        </div>
-                        <div class="alloc-item">
-                            <span class="alloc-label">ETH</span>
-                            <div class="alloc-bar"><div class="alloc-fill eth" id="alloc-eth"></div></div>
-                            <span class="alloc-pct" id="alloc-eth-pct">--%</span>
-                        </div>
-                        <div class="alloc-item">
-                            <span class="alloc-label">ALTS</span>
-                            <div class="alloc-bar"><div class="alloc-fill alts" id="alloc-alts"></div></div>
-                            <span class="alloc-pct" id="alloc-alts-pct">--%</span>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Monte Carlo Card -->
-            <section class="card monte-carlo-card">
-                <h2>Monte Carlo Forecast</h2>
-                <div class="mc-horizons">
-                    <div class="mc-horizon" id="mc-30d">
-                        <span class="horizon-label">30D</span>
-                        <span class="horizon-median">$--</span>
-                        <span class="horizon-range">-- to --</span>
-                        <span class="horizon-return">--%</span>
-                    </div>
-                    <div class="mc-horizon" id="mc-90d">
-                        <span class="horizon-label">90D</span>
-                        <span class="horizon-median">$--</span>
-                        <span class="horizon-range">-- to --</span>
-                        <span class="horizon-return">--%</span>
-                    </div>
-                    <div class="mc-horizon highlight" id="mc-365d">
-                        <span class="horizon-label">12M</span>
-                        <span class="horizon-median">$--</span>
-                        <span class="horizon-range">-- to --</span>
-                        <span class="horizon-return">--%</span>
-                    </div>
-                </div>
-                <div class="probability-grid">
-                    <div class="prob-item">
-                        <span class="prob-label">P(&gt;$100K)</span>
-                        <span class="prob-value" id="prob-100k">--%</span>
-                    </div>
-                    <div class="prob-item">
-                        <span class="prob-label">P(&gt;$150K)</span>
-                        <span class="prob-value" id="prob-150k">--%</span>
-                    </div>
-                    <div class="prob-item">
-                        <span class="prob-label">P(&lt;$75K)</span>
-                        <span class="prob-value" id="prob-75k">--%</span>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <!-- ENHANCED INSIGHTS v7.1 -->
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-
-        <!-- Cycle Intelligence Section -->
-        <section class="insight-section" id="cycle-intelligence-section">
-            <div class="insight-header">
-                <h2>Cycle Intelligence</h2>
-                <span class="insight-subtitle">Where We Are & What It Means</span>
+        <!-- 12-Layer Scoring -->
+        <section class="layers-section">
+            <h2>12-Layer Scoring Engine</h2>
+            <div class="layers-grid" id="layers-grid">
+                <!-- Each layer rendered by JS -->
             </div>
-            <div class="cycle-intel-content">
-                <div class="where-we-are-box" id="where-we-are">
-                    <h3 class="phase-display-name" id="phase-display-name">--</h3>
-                    <p class="simple-explanation" id="simple-explanation">Loading...</p>
-                    <div class="position-badge" id="cycle-position">--</div>
-                    <p class="position-explanation" id="position-explanation">Loading cycle analysis...</p>
+        </section>
+
+        <!-- Market Data Grid -->
+        <section class="market-data-section">
+            <h2>Live Market Data</h2>
+            <div class="data-grid">
+                <!-- Row 1: Core -->
+                <div class="data-card">
+                    <h3>Valuation</h3>
+                    <div class="data-item">
+                        <span class="data-label">MVRV</span>
+                        <span class="data-value" id="mvrv-value">--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">Realized Price</span>
+                        <span class="data-value" id="realized-price">$--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">STH Realized</span>
+                        <span class="data-value" id="sth-realized">$--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">LTH Realized</span>
+                        <span class="data-value" id="lth-realized">$--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">NUPL</span>
+                        <span class="data-value" id="nupl-value">--</span>
+                    </div>
                 </div>
-                <div class="cycle-intel-grid">
-                    <div class="intel-card">
-                        <h3>Phase Psychology</h3>
-                        <p id="phase-psychology">--</p>
+
+                <div class="data-card">
+                    <h3>Sentiment</h3>
+                    <div class="data-item">
+                        <span class="data-label">Fear & Greed</span>
+                        <span class="data-value fear-greed-badge" id="fear-greed">--</span>
                     </div>
-                    <div class="intel-card">
-                        <h3>Smart Money Behavior</h3>
-                        <p id="smart-money-behavior">--</p>
+                    <div class="data-item">
+                        <span class="data-label">Coinbase Premium</span>
+                        <span class="data-value" id="cb-premium">--%</span>
                     </div>
-                    <div class="intel-card">
-                        <h3>Retail Behavior</h3>
-                        <p id="retail-behavior">--</p>
+                    <div class="data-item">
+                        <span class="data-label">BTC Dominance</span>
+                        <span class="data-value" id="btc-dom">--%</span>
                     </div>
-                    <div class="intel-card action-card">
-                        <h3>What You Should Do</h3>
-                        <p id="what-to-do">--</p>
+                    <div class="data-item">
+                        <span class="data-label">ETH/BTC</span>
+                        <span class="data-value" id="eth-btc">--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">ETH Price</span>
+                        <span class="data-value" id="eth-price">$--</span>
                     </div>
                 </div>
-                <div class="cycle-metrics-row">
-                    <div class="cycle-metric">
-                        <span class="metric-label">Rally from Low</span>
-                        <span class="metric-value" id="rally-from-low">--%</span>
+
+                <div class="data-card">
+                    <h3>Derivatives</h3>
+                    <div class="data-item">
+                        <span class="data-label">Funding Rate</span>
+                        <span class="data-value" id="funding-rate">--%</span>
                     </div>
-                    <div class="cycle-metric">
-                        <span class="metric-label">Drawdown from ATH</span>
-                        <span class="metric-value" id="dd-from-ath">--%</span>
+                    <div class="data-item">
+                        <span class="data-label">Futures Basis</span>
+                        <span class="data-value" id="futures-basis">--%</span>
                     </div>
-                    <div class="cycle-metric">
-                        <span class="metric-label">Typical Phase Duration</span>
-                        <span class="metric-value" id="phase-duration">--</span>
+                    <div class="data-item">
+                        <span class="data-label">Long/Short Ratio</span>
+                        <span class="data-value" id="ls-ratio">--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">Liquidation 24h</span>
+                        <span class="data-value" id="liq-24h">$--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">OI Change 24h</span>
+                        <span class="data-value" id="oi-change">--%</span>
+                    </div>
+                </div>
+
+                <div class="data-card">
+                    <h3>Options</h3>
+                    <div class="data-item">
+                        <span class="data-label">Put/Call Ratio</span>
+                        <span class="data-value" id="put-call">--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">Max Pain</span>
+                        <span class="data-value" id="max-pain">$--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">Options OI</span>
+                        <span class="data-value" id="options-oi">$--</span>
+                    </div>
+                </div>
+
+                <div class="data-card">
+                    <h3>ETF Flows</h3>
+                    <div class="data-item">
+                        <span class="data-label">Daily Flow</span>
+                        <span class="data-value" id="etf-daily">$--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">Weekly Flow</span>
+                        <span class="data-value" id="etf-weekly">$--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">Cumulative</span>
+                        <span class="data-value" id="etf-cumulative">$--</span>
+                    </div>
+                </div>
+
+                <div class="data-card">
+                    <h3>Macro (FRED)</h3>
+                    <div class="data-item">
+                        <span class="data-label">HY OAS</span>
+                        <span class="data-value" id="hy-oas">--%</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">2s10s Curve</span>
+                        <span class="data-value" id="yield-curve">--%</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">Initial Claims</span>
+                        <span class="data-value" id="init-claims">--K</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">ANFCI</span>
+                        <span class="data-value" id="anfci-value">--</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">Net Liquidity</span>
+                        <span class="data-value" id="net-liq">$--B</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">M2 Growth</span>
+                        <span class="data-value" id="m2-growth">--%</span>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Scenario Analysis Section -->
-        <section class="insight-section" id="scenario-section">
-            <div class="insight-header">
-                <h2>Scenario Analysis</h2>
-                <span class="insight-subtitle">12-Month Price Scenarios with Probabilities</span>
+        <!-- Data Source Audit -->
+        <section class="audit-section">
+            <div class="audit-header" onclick="toggleSection('audit-content')">
+                <h2>Data Source Audit</h2>
+                <span class="toggle-icon">&#9660;</span>
             </div>
-            <div class="scenario-grid">
-                <div class="scenario-card bull" id="scenario-bull">
-                    <div class="scenario-header">
-                        <span class="scenario-name">Strong Bull</span>
-                        <span class="scenario-prob">--%</span>
-                    </div>
-                    <div class="scenario-target">$--</div>
-                    <div class="scenario-catalysts" id="bull-catalysts">
-                        <!-- Catalysts populated by JS -->
-                    </div>
+            <div class="audit-content collapsed" id="audit-content">
+                <div class="sources-list" id="sources-list">
+                    <!-- Populated by JS -->
                 </div>
-                <div class="scenario-card base" id="scenario-base">
-                    <div class="scenario-header">
-                        <span class="scenario-name">Base Case</span>
-                        <span class="scenario-prob">--%</span>
-                    </div>
-                    <div class="scenario-target">$--</div>
-                    <div class="scenario-catalysts" id="base-catalysts">
-                        <!-- Catalysts populated by JS -->
-                    </div>
-                </div>
-                <div class="scenario-card bear" id="scenario-bear">
-                    <div class="scenario-header">
-                        <span class="scenario-name">Bear Case</span>
-                        <span class="scenario-prob">--%</span>
-                    </div>
-                    <div class="scenario-target">$--</div>
-                    <div class="scenario-catalysts" id="bear-catalysts">
-                        <!-- Catalysts populated by JS -->
-                    </div>
-                </div>
-            </div>
-            <div class="expected-value-box">
-                <span class="ev-label">Probability-Weighted Expected Value (12M):</span>
-                <span class="ev-value" id="expected-value">$--</span>
-                <span class="ev-return" id="expected-return">(--%)</span>
-            </div>
-        </section>
-
-        <!-- Peak Timing Forecast Section -->
-        <section class="insight-section" id="peak-timing-section">
-            <div class="insight-header">
-                <h2>🎯 Cycle Peak Forecast</h2>
-                <span class="insight-subtitle">Monte Carlo Simulation & Historical Pattern Analysis</span>
-            </div>
-            <div class="peak-timing-content">
-                <div class="peak-main-forecast">
-                    <div class="peak-estimate">
-                        <span class="peak-label">Estimated Peak</span>
-                        <span class="peak-date" id="peak-date">--</span>
-                        <span class="peak-quarter" id="peak-quarter">--</span>
-                    </div>
-                    <div class="peak-confidence">
-                        <span class="conf-label">Confidence</span>
-                        <span class="conf-value" id="peak-confidence">--</span>
-                    </div>
-                    <div class="days-remaining">
-                        <span class="days-label">Days to Peak (est)</span>
-                        <span class="days-value" id="days-to-peak">--</span>
-                    </div>
-                </div>
-
-                <div class="peak-probabilities">
-                    <h3>Peak Probability Windows</h3>
-                    <div class="prob-grid">
-                        <div class="prob-item">
-                            <span class="prob-label">Within 3 Months</span>
-                            <span class="prob-value" id="prob-peak-3m">--%</span>
-                        </div>
-                        <div class="prob-item">
-                            <span class="prob-label">Within 6 Months</span>
-                            <span class="prob-value" id="prob-peak-6m">--%</span>
-                        </div>
-                        <div class="prob-item">
-                            <span class="prob-label">Within 12 Months</span>
-                            <span class="prob-value" id="prob-peak-12m">--%</span>
-                        </div>
-                        <div class="prob-item">
-                            <span class="prob-label">Already Passed</span>
-                            <span class="prob-value" id="prob-peak-passed">--%</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="peak-price-targets">
-                    <h3>Peak Price Estimates</h3>
-                    <div class="price-target-grid">
-                        <div class="price-target conservative">
-                            <span class="target-label">Conservative</span>
-                            <span class="target-price" id="peak-price-conservative">$--</span>
-                            <span class="target-mvrv" id="peak-mvrv-conservative">MVRV --</span>
-                        </div>
-                        <div class="price-target base">
-                            <span class="target-label">Base Case</span>
-                            <span class="target-price" id="peak-price-base">$--</span>
-                            <span class="target-mvrv" id="peak-mvrv-base">MVRV --</span>
-                        </div>
-                        <div class="price-target optimistic">
-                            <span class="target-label">Optimistic</span>
-                            <span class="target-price" id="peak-price-optimistic">$--</span>
-                            <span class="target-mvrv" id="peak-mvrv-optimistic">MVRV --</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="peak-recommendation" id="peak-recommendation">
-                    Loading peak timing analysis...
-                </div>
-
-                <!-- Power Law & LPPL Bubble Analysis -->
-                <div class="lppl-analysis">
-                    <h3>📊 Power Law & LPPL Bubble Analysis</h3>
-                    <p class="lppl-subtitle">Perrenod Model: Log-Periodic Power Law (λ = 2.07)</p>
-                    <div class="lppl-grid">
-                        <div class="lppl-item">
-                            <span class="lppl-label">Power Law Zone</span>
-                            <span class="lppl-value zone-badge" id="pl-zone">--</span>
-                        </div>
-                        <div class="lppl-item">
-                            <span class="lppl-label">Corridor Position</span>
-                            <span class="lppl-value" id="pl-percentile">--%</span>
-                        </div>
-                        <div class="lppl-item">
-                            <span class="lppl-label">Bubble Probability</span>
-                            <span class="lppl-value" id="lppl-bubble-prob">--%</span>
-                        </div>
-                        <div class="lppl-item">
-                            <span class="lppl-label">LPPL Phase</span>
-                            <span class="lppl-value" id="lppl-phase">--</span>
-                        </div>
-                        <div class="lppl-item">
-                            <span class="lppl-label">Next Bubble Window</span>
-                            <span class="lppl-value" id="lppl-next-bubble">May 2027</span>
-                        </div>
-                        <div class="lppl-item">
-                            <span class="lppl-label">Years to Bubble</span>
-                            <span class="lppl-value" id="lppl-years-away">-- yrs</span>
-                        </div>
-                    </div>
-                    <div class="lppl-insight" id="lppl-insight">
-                        Loading LPPL analysis...
-                    </div>
-                </div>
-
-                <div class="cycle-progress-tracker">
-                    <h3>Cycle Progress</h3>
-                    <div class="progress-bars">
-                        <div class="progress-item">
-                            <span class="progress-label">From Halving</span>
-                            <div class="progress-bar"><div class="progress-fill" id="halving-progress-fill"></div></div>
-                            <span class="progress-value" id="halving-progress">--%</span>
-                        </div>
-                        <div class="progress-item">
-                            <span class="progress-label">From Bottom</span>
-                            <div class="progress-bar"><div class="progress-fill" id="bottom-progress-fill"></div></div>
-                            <span class="progress-value" id="bottom-progress">--%</span>
-                        </div>
-                    </div>
-                    <div class="cycle-stats">
-                        <span id="days-since-halving">-- days since halving</span>
-                        <span id="days-since-bottom">-- days since bottom</span>
-                    </div>
+                <div class="warnings-list" id="warnings-list">
+                    <!-- Populated by JS -->
                 </div>
             </div>
         </section>
 
-        <!-- Risk Management Section -->
-        <section class="insight-section" id="risk-section">
-            <div class="insight-header">
-                <h2>Risk Management</h2>
-                <span class="insight-subtitle">Position Sizing & Drawdown Analysis</span>
-            </div>
-            <div class="risk-grid">
-                <div class="risk-card position-sizing">
-                    <h3>Recommended Position</h3>
-                    <div class="position-pct" id="recommended-allocation">--%</div>
-                    <div class="conviction-badge" id="conviction-level">--</div>
-                    <p class="position-rationale" id="position-rationale">--</p>
-                </div>
-                <div class="risk-card drawdown-analysis">
-                    <h3>Drawdown Risk</h3>
-                    <div class="drawdown-metrics">
-                        <div class="dd-metric">
-                            <span class="dd-label">Typical Drawdown</span>
-                            <span class="dd-value" id="typical-dd">--%</span>
-                        </div>
-                        <div class="dd-metric">
-                            <span class="dd-label">Max Historical</span>
-                            <span class="dd-value" id="max-dd">--%</span>
-                        </div>
-                    </div>
-                    <p class="mental-prep" id="mental-prep">--</p>
-                </div>
-                <div class="risk-card risk-reward">
-                    <h3>Risk/Reward</h3>
-                    <div class="rr-rating" id="rr-rating">--</div>
-                    <div class="rr-details">
-                        <div><span>Downside Risk:</span> <span id="downside-risk">--</span></div>
-                        <div><span>Upside Potential:</span> <span id="upside-potential">--</span></div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Trade Levels Section -->
-        <section class="insight-section" id="trade-levels-section">
-            <div class="insight-header">
-                <h2>Trade Levels</h2>
-                <span class="insight-subtitle">Actionable Entries, Exits & Stops</span>
-            </div>
-            <div class="trade-levels-grid">
-                <div class="levels-card entries">
-                    <h3>Entry Zones</h3>
-                    <div class="levels-list" id="entry-levels">
-                        <!-- Populated by JS -->
-                    </div>
-                </div>
-                <div class="levels-card exits">
-                    <h3>Exit Targets</h3>
-                    <div class="levels-list" id="exit-levels">
-                        <!-- Populated by JS -->
-                    </div>
-                </div>
-                <div class="levels-card stops">
-                    <h3>Stop Loss</h3>
-                    <div class="levels-list" id="stop-levels">
-                        <!-- Populated by JS -->
-                    </div>
-                </div>
-            </div>
-            <div class="trade-plan-box">
-                <h3>Trade Plan Summary</h3>
-                <pre class="trade-plan" id="trade-plan">Loading trade plan...</pre>
-            </div>
-        </section>
-
-        <!-- Watchlist Section -->
-        <section class="insight-section" id="watchlist-section">
-            <div class="insight-header">
-                <h2>Trader Watchlist</h2>
-                <span class="insight-subtitle">Key Metrics & Levels to Monitor</span>
-            </div>
-            <div class="watchlist-grid">
-                <div class="watchlist-card">
-                    <h3>Daily Checklist</h3>
-                    <ul class="watchlist-items" id="daily-watchlist">
-                        <!-- Populated by JS -->
-                    </ul>
-                </div>
-                <div class="watchlist-card">
-                    <h3>Key Price Levels</h3>
-                    <div class="price-levels" id="key-price-levels">
-                        <!-- Populated by JS -->
-                    </div>
-                </div>
-                <div class="watchlist-card flags">
-                    <h3>Red Flags (Warning Signs)</h3>
-                    <ul class="flag-list red" id="red-flags">
-                        <!-- Populated by JS -->
-                    </ul>
-                </div>
-                <div class="watchlist-card flags">
-                    <h3>Green Flags (Bullish Signs)</h3>
-                    <ul class="flag-list green" id="green-flags">
-                        <!-- Populated by JS -->
-                    </ul>
-                </div>
-            </div>
-        </section>
-
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-
-        <!-- Thesis Section -->
-        <section class="thesis-section">
-            <div class="thesis-header">
-                <h2>Thesis</h2>
-                <button class="btn-copy" onclick="copyThesis()">Copy for Discord</button>
-            </div>
-            <pre class="thesis-content" id="thesis-content">Loading thesis...</pre>
-        </section>
-
-        <!-- Data Override Section -->
-        <section class="overrides-section collapsed" id="overrides-section">
-            <div class="overrides-header" onclick="toggleOverrides()">
+        <!-- Manual Overrides -->
+        <section class="overrides-section">
+            <div class="overrides-header" onclick="toggleSection('overrides-content')">
                 <h2>Manual Data Overrides</h2>
                 <span class="toggle-icon">&#9660;</span>
             </div>
-            <div class="overrides-content" id="overrides-content">
-                <p class="overrides-note">
-                    Some data (MVRV, NUPL, Fed BS, ISM, etc.) cannot be fetched from free APIs.
-                    Enter manual values below to override defaults.
-                </p>
+            <div class="overrides-content collapsed" id="overrides-content">
+                <p class="overrides-note">Override any value that CoinGlass/FRED can't fetch.</p>
                 <div class="override-grid">
                     <div class="override-item">
                         <label>MVRV</label>
@@ -715,20 +269,20 @@
                         <input type="number" step="0.01" id="override-nupl" placeholder="0.52">
                     </div>
                     <div class="override-item">
-                        <label>Fed BS ($T)</label>
-                        <input type="number" step="0.01" id="override-fed-bs" placeholder="6.57">
-                    </div>
-                    <div class="override-item">
-                        <label>RRP ($T)</label>
-                        <input type="number" step="0.01" id="override-rrp" placeholder="0.25">
-                    </div>
-                    <div class="override-item">
-                        <label>ISM Mfg</label>
-                        <input type="number" step="0.1" id="override-ism-mfg" placeholder="49.2">
-                    </div>
-                    <div class="override-item">
                         <label>Fear & Greed</label>
-                        <input type="number" id="override-fg" placeholder="62">
+                        <input type="number" id="override-fear_greed" placeholder="50">
+                    </div>
+                    <div class="override-item">
+                        <label>Funding Rate</label>
+                        <input type="number" step="0.0001" id="override-funding_rate" placeholder="0.01">
+                    </div>
+                    <div class="override-item">
+                        <label>Put/Call Ratio</label>
+                        <input type="number" step="0.01" id="override-put_call_ratio" placeholder="0.65">
+                    </div>
+                    <div class="override-item">
+                        <label>HY OAS</label>
+                        <input type="number" step="0.01" id="override-hy_oas" placeholder="3.5">
                     </div>
                 </div>
                 <div class="override-actions">
@@ -741,12 +295,14 @@
         <!-- Footer -->
         <footer class="footer">
             <div class="footer-left">
-                <span>Bitcoin Strategic Cycle Model v7.1</span>
+                <span>BTC Econometric Model v7.6</span>
                 <span class="separator">|</span>
                 <span id="last-updated">Last updated: --</span>
             </div>
             <div class="footer-right">
                 <span class="data-source" id="data-source">Data: --</span>
+                <span class="separator">|</span>
+                <span id="sources-count">-- sources verified</span>
             </div>
         </footer>
     </div>

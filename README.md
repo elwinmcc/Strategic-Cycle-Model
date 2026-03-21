@@ -1,124 +1,92 @@
-# Bitcoin Strategic Cycle Model v7.0
+# BTC Econometric Model v7.6
 
-**"The Liquidity Thesis"** - A comprehensive Bitcoin cycle analysis dashboard.
+**12-Layer Scoring Engine** — Fully automated, zero manual inputs.
 
-## Overview
+## Data Sources
 
-This is a live web dashboard for the Bitcoin Strategic Cycle Model, designed to help traders and investors make informed decisions based on:
+- **CoinGlass API v4** (Startup plan) — derivatives, on-chain, ETF, options
+- **FRED API** — macro/credit/cycle indicators
 
-- **Liquidity Analysis** - Fed Balance Sheet, RRP, TGA, Global M2
-- **Business Cycle** - ISM Manufacturing/Services + Regional Fed Leading Indicators
-- **Valuation** - MVRV, Power Law, On-Chain Metrics
-- **Multi-Timeframe Trends** - STF/MTF/LTF Momentum Analysis
-- **Alt Rotation** - ETH/BTC, TOTAL3/BTC, Capital Flow
-- **Phase Detection** - Wyckoff Cycle with Transition Forecasting
-- **Top Detection** - 10-Indicator Distribution Warning System
-- **Monte Carlo** - Cycle-Aware Price Simulation
-
-## Core Thesis
-
-> Bitcoin is a macro liquidity asset. Buy value, sell euphoria.
-
-- Value-dominant buying (MVRV < 2.0 = accumulate)
-- Phase-aware selling (MVRV > 5.0 + top signals = distribute)
-- 80% drawdown tolerance enables conviction
-- Liquidity drives price, not halving cycles
-
-## Installation
+## Setup
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd Strategic-Cycle-Model
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
 # Install dependencies
 pip install -r requirements.txt
-```
 
-## Running the Dashboard
+# Set API keys
+export COINGLASS_API_KEY="your_key_here"
+export FRED_API_KEY="your_key_here"
 
-```bash
-# Start the server
+# Run the dashboard
 python run.py
-
-# Or using uvicorn directly
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Then open http://localhost:8000 in your browser.
+Then open http://localhost:8000.
+
+## 12-Layer Model
+
+| Layer | Weight | Source |
+|-------|--------|--------|
+| Institutional (ETF flows) | 25% | CoinGlass ETF |
+| Leverage Fragility | 15% | CoinGlass Funding/L-S |
+| Derivatives | 12% | CoinGlass Basis |
+| MVRV | 12% | CoinGlass On-Chain |
+| Cycle Phase | 10% | FRED (ANFCI/Claims/2s10s) |
+| Global Liquidity | 8% | FRED (Fed BS/RRP/TGA) |
+| Options Sentiment | 6% | CoinGlass Options |
+| Credit | 5% | FRED (HY OAS) |
+| Macro-Liquidity | 3% | FRED Composite |
+| Support | 2% | CoinGlass Realized Price |
+| Momentum | 1% | CoinGlass OHLC |
+| Sentiment | 1% | CoinGlass F&G |
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/` | GET | Main dashboard |
-| `/api/analyze` | GET | Full analysis with live data |
+| `/` | GET | Dashboard |
+| `/api/analyze` | GET | Full v7.6 analysis with live data |
 | `/api/analyze/default` | GET | Analysis with demo data |
-| `/api/live-data` | GET | Live market data only |
+| `/api/live-data` | GET | Raw market data |
 | `/api/signal` | GET | Current signal only |
-| `/api/thesis` | GET | Generated thesis text |
 | `/api/overrides` | GET/POST/DELETE | Manual data overrides |
 | `/api/health` | GET | Health check |
 
-## Data Sources
+## Signals
 
-The dashboard fetches live data from:
-- **CoinGecko** - BTC/ETH prices, market cap, dominance
-- **Alternative.me** - Fear & Greed Index
+The model outputs one of 8 signals based on the final composite score (0-100):
 
-Some data requires manual input (via the Overrides panel):
-- MVRV, NUPL, Puell Multiple (on-chain metrics)
-- Fed Balance Sheet, RRP, TGA (liquidity data)
-- ISM Manufacturing/Services
-- Regional Fed surveys
+| Score | Signal |
+|-------|--------|
+| 85+ | AGGRESSIVE_BUY |
+| 75-84 | STRONG_BUY |
+| 65-74 | BUY |
+| 55-64 | ACCUMULATE |
+| 45-54 | HOLD |
+| 35-44 | REDUCE |
+| 25-34 | SELL |
+| <25 | STRONG_SELL |
 
 ## Project Structure
 
 ```
 Strategic-Cycle-Model/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py           # FastAPI application
-│   └── data_service.py   # Data fetching service
+│   ├── main.py           # FastAPI routes
+│   └── data_service.py   # CoinGlass + FRED async client
 ├── model/
 │   ├── __init__.py
-│   └── strategic_cycle_model.py  # Core model
+│   └── btc_model_v76.py  # 12-layer scoring engine
 ├── static/
-│   ├── css/
-│   │   └── style.css     # Dashboard styles
-│   └── js/
-│       └── app.js        # Dashboard JavaScript
+│   ├── css/style.css
+│   └── js/app.js
 ├── templates/
-│   └── index.html        # Dashboard HTML
+│   └── index.html
 ├── requirements.txt
 ├── run.py
 └── README.md
 ```
 
-## Model Components
-
-1. **Liquidity Engine** - Net liquidity, RRP depletion, Fed trajectory
-2. **Business Cycle Engine** - ISM + Regional Fed composite
-3. **BTC Trend Engine** - Multi-timeframe momentum analysis
-4. **Altcoin Engine** - Rotation phase detection
-5. **Phase Engine** - Wyckoff cycle detection, MVRV zones
-6. **Forecast Engine** - Monte Carlo simulation, phase transitions
-7. **Backtest Engine** - Historical regime tracking
-8. **Signal Generator** - Final recommendation
-9. **Thesis Generator** - Social media output
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit pull requests.
-
 ## Disclaimer
 
-This model is for educational and informational purposes only. It is not financial advice. Always do your own research and consult with qualified financial advisors before making investment decisions.
-
-## License
-
-MIT License
+Educational and informational purposes only. Not financial advice.

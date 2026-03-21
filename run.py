@@ -13,8 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 if __name__ == "__main__":
     print("""
     ═══════════════════════════════════════════════════════════════════════════
-                    BITCOIN STRATEGIC CYCLE MODEL v7.0
-                           Web Dashboard Server
+                    BTC ECONOMETRIC MODEL v7.6
+                CoinGlass API + FRED | 12-Layer Engine
     ═══════════════════════════════════════════════════════════════════════════
 
     Starting server...
