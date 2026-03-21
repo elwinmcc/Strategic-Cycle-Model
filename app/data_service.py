@@ -243,14 +243,14 @@ class DataServiceV76:
         (funding, liq, etf_flows, etf_list, opt_info, max_pain,
          sth, lth, nupl_data, fg, dom, prem, m2) = results
 
-        # Parse in order: STH first (provides BTC price)
+        # Parse in order: ETF flows first (provides BTC market price from futures/ETF)
+        self._parse_etf_flows(inputs, etf_flows)
         self._parse_sth(inputs, sth)
         self._parse_lth(inputs, lth)
         self._compute_mvrv(inputs)
         self._parse_nupl(inputs, nupl_data)
         self._parse_funding(inputs, funding)
         self._parse_liquidations(inputs, liq)
-        self._parse_etf_flows(inputs, etf_flows)
         self._parse_etf_list(inputs, etf_list)
         self._parse_options(inputs, opt_info)
         self._parse_max_pain(inputs, max_pain)
@@ -259,8 +259,9 @@ class DataServiceV76:
         self._parse_premium(inputs, prem)
         self._parse_m2(inputs, m2)
 
-    # ── Parse: STH Realized Price (also provides BTC price) ────────
+    # ── Parse: STH Realized Price ─────────────────────────────────
     # Live response: [{"timestamp":..., "price":71250, "sth_realized_price":85974}, ...]
+    # NOTE: "price" field is on-chain derived — used as fallback only if ETF price unavailable.
 
     def _parse_sth(self, inputs, sth):
         if not sth or isinstance(sth, Exception):
@@ -269,15 +270,16 @@ class DataServiceV76:
             entry = sth[-1]
             if isinstance(entry, dict):
                 inputs.sth_realized_price = float(entry.get("sth_realized_price", 0))
-                # BTC price from this endpoint (coins-markets is 401 on startup plan)
-                price = float(entry.get("price", 0))
-                if price > 0:
-                    inputs.btc_price = price
-                    inputs.sources["btc_price"] = "CoinGlass v4 STH (on-chain)"
-                    inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
                 if inputs.sth_realized_price > 0:
                     inputs.sources["sth_price"] = "CoinGlass v4 STH RP"
-                # Also get 30d ago price for momentum
+                # Fallback: use on-chain price only if ETF price wasn't set
+                if inputs.btc_price == 0:
+                    price = float(entry.get("price", 0))
+                    if price > 0:
+                        inputs.btc_price = price
+                        inputs.sources["btc_price"] = "CoinGlass v4 STH (on-chain fallback)"
+                        inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
+                # 30d ago price for momentum
                 if len(sth) >= 30:
                     old_entry = sth[-30]
                     if isinstance(old_entry, dict):
@@ -383,17 +385,32 @@ class DataServiceV76:
                 inputs.sources["liquidation"] = "CoinGlass v4"
 
     # ── Parse: ETF Flows ───────────────────────────────────────────
-    # Live response: [{"timestamp":..., "flow_usd":655300000, "price_usd":46663, "etf_flows":[...]}, ...]
+    # Live response: [{"timestamp":..., "flow_usd":655300000, "price_usd":69887.4, "etf_flows":[...]}, ...]
+    # NOTE: price_usd here is the BTC market price at ETF close — used as primary price source
+    # since futures/coins-markets and futures/price/history require plan upgrade.
 
     def _parse_etf_flows(self, inputs, etf_flows):
         if not etf_flows or isinstance(etf_flows, Exception):
             return
         if isinstance(etf_flows, list):
+            # Sort by timestamp descending to get most recent first
+            sorted_flows = sorted(
+                [e for e in etf_flows if isinstance(e, dict)],
+                key=lambda x: x.get("timestamp", 0),
+                reverse=True,
+            )
+            # BTC price from the most recent ETF entry
+            if sorted_flows:
+                price = float(sorted_flows[0].get("price_usd", 0))
+                if price > 0:
+                    inputs.btc_price = price
+                    inputs.sources["btc_price"] = "CoinGlass v4 ETF (market price)"
+                    inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
+            # Compute flows (entries come from API in ascending order)
             daily_flows = []
-            for entry in etf_flows[:10]:
-                if isinstance(entry, dict):
-                    flow = float(entry.get("flow_usd", 0))
-                    daily_flows.append(flow)
+            for entry in sorted_flows:
+                flow = float(entry.get("flow_usd", 0))
+                daily_flows.append(flow)
             if daily_flows:
                 inputs.etf_flow_daily = daily_flows[0]
                 inputs.etf_flow_weekly = sum(daily_flows[:5])
