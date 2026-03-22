@@ -1,14 +1,25 @@
 """
 Data Service for BTC Econometric Model v7.6
-Primary: CoinGlass API v4 (verified against live responses)
+Primary: CoinGlass API v4 (docs.coinglass.com)
 Secondary: FRED API (macro/credit/cycle)
 
-BTC price: coins-markets (primary), on-chain STH/LTH (fallback)
-Long/short ratio: global-long-short-account-ratio/history
+BTC/ETH price: spot/coins-markets
+On-chain: index/bitcoin-sth-realized-price, index/bitcoin-lth-realized-price
+NUPL: index/bitcoin-net-unrealized-profit-loss
+Fear & Greed: index/fear-greed-history
+Dominance: index/bitcoin-dominance
+M2: index/bitcoin-vs-global-m2-growth
+Coinbase Premium: coinbase-premium-index
+Long/short ratio: futures/global-long-short-account-ratio/history
 Futures basis: futures/basis/history
 RSI: futures/rsi/list
-Put/call ratio: derived from option/max-pain OI (no dedicated endpoint)
-MVRV: calculated from STH/LTH realized prices (not available via API)
+Funding rates: futures/funding-rate/exchange-list
+Liquidations: futures/liquidation/aggregated-history
+OI: futures/open-interest/exchange-list, futures/open-interest/ohlc-aggregated-history
+Options: option/info, option/max-pain
+ETF: etf/bitcoin/flow-history, etf/bitcoin/list
+Put/call ratio: derived from option/max-pain OI
+MVRV: calculated from STH/LTH realized prices
 """
 
 import os
@@ -79,22 +90,22 @@ class CoinGlassClient:
     # Response: [{"t":...,"o":46000000000,"h":47000000000,"l":45000000000,"c":46500000000}]
 
     async def get_oi_ohlc_history(self, client, symbol="BTC"):
-        return await self._get(client, "futures/openInterest/ohlc-aggregated-history", {
+        return await self._get(client, "futures/open-interest/aggregated-history", {
             "symbol": symbol, "interval": "1d", "limit": 2,
         })
 
     # ── Funding Rates ───────────────────────────────────────────────
-    # Response: {"data": [{"symbol":"BTC", "stablecoin_margin_list":[{"exchange":"Binance","funding_rate":0.001,...},...]}]}
+    # v4 Response: [{"exchange":"Binance","funding_rate":0.00196,"next_funding_time":...,"position_value_usd":...}]
 
     async def get_funding_rates(self, client, symbol="BTC"):
-        return await self._get(client, "futures/fundingRate/exchange-list", {"symbol": symbol})
+        return await self._get(client, "futures/funding-rate/exchange-list", {"symbol": symbol})
 
     # ── Liquidations ────────────────────────────────────────────────
-    # Requires exchange_list param. Response: [{"time":...,"aggregated_long_liquidation_usd":...,"aggregated_short_liquidation_usd":...}]
+    # v4 Response: [{"symbol":"BTC","long_liquidation_usd_24h":...,"short_liquidation_usd_24h":...}]
 
     async def get_liquidations(self, client, symbol="BTC"):
         return await self._get(client, "futures/liquidation/aggregated-history", {
-            "symbol": symbol, "interval": "1d", "limit": 1, "exchange_list": "Binance,OKX,Bybit"
+            "symbol": symbol, "range": "24h",
         })
 
     # ── ETF ─────────────────────────────────────────────────────────
@@ -102,14 +113,14 @@ class CoinGlassClient:
     # list response: [{"ticker":"GBTC","volume_usd":...,"price_usd":...,"asset_details":{"net_asset_value_usd":...,...}}]
 
     async def get_etf_flows(self, client, limit=10):
-        return await self._get(client, "bitcoin/etf/flow-history", {"limit": limit})
+        return await self._get(client, "etf/bitcoin/flow-history", {"limit": limit})
 
     async def get_etf_list(self, client):
-        return await self._get(client, "bitcoin/etf/list")
+        return await self._get(client, "etf/bitcoin/list")
 
     # ── Options ─────────────────────────────────────────────────────
     # option/info response: [{"exchange_name":"All","open_interest_usd":...,"volume_usd_24h":...}]
-    # max-pain requires exchange param. Response: [{"date":"...","max_pain_price":"70500","call_open_interest":2325,"put_open_interest":3252}]
+    # max-pain response: [{"date":"260322","max_pain_price":"70500","call_open_interest":2325,"put_open_interest":3252}]
 
     async def get_options_info(self, client, symbol="BTC"):
         return await self._get(client, "option/info", {"symbol": symbol})
@@ -118,54 +129,54 @@ class CoinGlassClient:
         return await self._get(client, "option/max-pain", {"symbol": symbol, "exchange": "Deribit"})
 
     # ── On-Chain ────────────────────────────────────────────────────
-    # STH response: [{"timestamp":...,"price":71250,"sth_realized_price":85974}]  (price = BTC price!)
+    # STH response: [{"timestamp":...,"price":71250,"sth_realized_price":85974}]
     # LTH response: [{"timestamp":...,"price":71250,"lth_realized_price":...}]
     # NUPL response: [{"price":...,"net_unpnl":0.52,"timestamp":...}]
 
     async def get_sth_realized(self, client):
-        return await self._get(client, "indicator/bitcoin-short-term-holder-realized-price")
+        return await self._get(client, "index/bitcoin-sth-realized-price")
 
     async def get_lth_realized(self, client):
-        return await self._get(client, "indicator/bitcoin-long-term-holder-realized-price")
+        return await self._get(client, "index/bitcoin-lth-realized-price")
 
     async def get_nupl(self, client):
-        return await self._get(client, "indicator/bitcoin-net-unrealized-pnl")
+        return await self._get(client, "index/bitcoin-net-unrealized-profit-loss")
 
     # ── Fear & Greed ────────────────────────────────────────────────
-    # Response: {"data_list":[30,15,40,...], "price_list":[...], "time_list":[...]}  (dict, not list!)
+    # Response: {"data_list":[30,15,40,...], "price_list":[...], "time_list":[...]}
 
     async def get_fear_greed(self, client):
         return await self._get(client, "index/fear-greed-history")
 
     # ── Coinbase Premium ────────────────────────────────────────────
-    # Response: [{"time":...,"premium":-13.72,"premium_rate":-0.0195}]
+    # Response: [{"time":...,"premium":5.55,"premium_rate":0.0261}]
 
     async def get_coinbase_premium(self, client):
-        return await self._get(client, "indicator/coinbase-premium")
+        return await self._get(client, "coinbase-premium-index", {"interval": "1d", "limit": 1})
 
     # ── Bitcoin Dominance ───────────────────────────────────────────
     # Response: [{"timestamp":...,"price":...,"bitcoin_dominance":94.35,"market_cap":...}]
 
     async def get_dominance(self, client):
-        return await self._get(client, "indicator/bitcoin-dominance")
+        return await self._get(client, "index/bitcoin-dominance")
 
     # ── Global M2 ──────────────────────────────────────────────────
     # Response: [{"timestamp":...,"price":...,"global_m2_yoy_growth":5.56,"global_m2_supply":...}]
 
     async def get_global_m2(self, client):
-        return await self._get(client, "indicator/bitcoin-vs-global-m2-supply-growth")
+        return await self._get(client, "index/bitcoin-vs-global-m2-growth")
 
-    # ── Coins Markets (proper BTC price) ────────────────────────────
-    # Response: [{"symbol":"BTC","price":84500.12,"priceChangePercent24H":-1.2,...}]
+    # ── Coins Markets (BTC + ETH prices) ────────────────────────────
+    # v4 Response: [{"symbol":"BTC","current_price":84500.12,"market_cap":...}, {"symbol":"ETH",...}]
 
-    async def get_coins_markets(self, client, symbol="BTC"):
-        return await self._get(client, "futures/coins-markets", {"symbol": symbol})
+    async def get_coins_markets(self, client):
+        return await self._get(client, "spot/coins-markets", {"per_page": 10, "page": 1})
 
     # ── Long/Short Ratio ─────────────────────────────────────────────
     # Response: [{"time":...,"longRate":0.5123,"shortRate":0.4877,"longShortRatio":1.05}]
 
     async def get_long_short_ratio(self, client, symbol="BTC"):
-        return await self._get(client, "futures/globalLongShortAccountRatio/history", {
+        return await self._get(client, "futures/global-long-short-account-ratio/history", {
             "symbol": symbol, "interval": "h4", "limit": 6,
         })
 
@@ -173,13 +184,13 @@ class CoinGlassClient:
     # Response: [{"time":...,"openBasis":5.2,"closeBasis":5.1,"annualizedBasis":8.3,...}]
 
     async def get_futures_basis(self, client, symbol="BTC"):
-        return await self._get(client, "indicator/basis", {"symbol": symbol})
+        return await self._get(client, "futures/basis/history", {"symbol": symbol})
 
     # ── RSI ──────────────────────────────────────────────────────────
-    # Response: [{"symbol":"BTC","rsi_24h":55.3,...}]
+    # Response: [{"symbol":"BTC","rsi_24h":55.3,"current_price":84500,...}]
 
     async def get_rsi(self, client, symbol="BTC"):
-        return await self._get(client, "indicator/futures-rsi-list")
+        return await self._get(client, "futures/rsi/list")
 
 
 class FREDClient:
@@ -268,7 +279,7 @@ class DataServiceV76:
         logger.info("Fetching CoinGlass v4 data...")
 
         results = await asyncio.gather(
-            self.cg.get_coins_markets(client),         # 0  ← proper BTC price
+            self.cg.get_coins_markets(client),         # 0  ← BTC + ETH prices
             self.cg.get_oi_exchange_list(client),      # 1  ← futures OI
             self.cg.get_funding_rates(client),         # 2
             self.cg.get_liquidations(client),          # 3
@@ -286,17 +297,17 @@ class DataServiceV76:
             self.cg.get_long_short_ratio(client),       # 15
             self.cg.get_futures_basis(client),          # 16
             self.cg.get_rsi(client),                    # 17
-            self.cg.get_coins_markets(client, "ETH"),  # 18  ← ETH price
-            self.cg.get_oi_ohlc_history(client),       # 19  ← OI OHLC for 24h change
+            self.cg.get_oi_ohlc_history(client),       # 18  ← OI OHLC for 24h change
             return_exceptions=True,
         )
 
         (coins_mkts, oi_exch, funding, liq, etf_flows, etf_list, opt_info,
          max_pain, sth, lth, nupl_data, fg, dom, prem, m2,
-         ls_ratio, basis, rsi, eth_mkts, oi_ohlc) = results
+         ls_ratio, basis, rsi, oi_ohlc) = results
 
-        # Parse in order: coins-markets first (proper BTC price)
+        # Parse in order: coins-markets first (BTC + ETH prices)
         self._parse_coins_markets(inputs, coins_mkts)
+        self._parse_eth_markets(inputs, coins_mkts)
         self._parse_oi_exchange_list(inputs, oi_exch)
         self._parse_oi_ohlc(inputs, oi_ohlc)
         self._parse_etf_flows(inputs, etf_flows)
@@ -316,47 +327,45 @@ class DataServiceV76:
         self._parse_dominance(inputs, dom)
         self._parse_premium(inputs, prem)
         self._parse_m2(inputs, m2)
-        self._parse_eth_markets(inputs, eth_mkts)
 
     # ── Parse: Coins Markets (primary BTC price) ───────────────────
-    # Live response: [{"symbol":"BTC","price":84500.12,...}]
+    # v4 response: [{"symbol":"BTC","current_price":84500.12,"market_cap":...}, ...]
 
     def _parse_coins_markets(self, inputs, data):
         if not data or isinstance(data, Exception):
             return
-        if isinstance(data, list):
-            for row in data:
-                if not isinstance(row, dict):
-                    continue
-                price = float(row.get("price", 0))
-                if price > 0:
-                    inputs.btc_price = round(price, 2)
-                    inputs.sources["btc_price"] = "CoinGlass v4 coins-markets"
-                    inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
-                    break
-        elif isinstance(data, dict):
-            price = float(data.get("price", 0))
+        row = self._find_symbol_in_list(data, "BTC")
+        if row:
+            price = float(row.get("current_price", row.get("price", 0)))
             if price > 0:
                 inputs.btc_price = round(price, 2)
-                inputs.sources["btc_price"] = "CoinGlass v4 coins-markets"
+                inputs.sources["btc_price"] = "CoinGlass v4 spot/coins-markets"
                 inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
 
+    @staticmethod
+    def _find_symbol_in_list(data, symbol):
+        """Find an entry by symbol in a list of dicts."""
+        if isinstance(data, list):
+            for row in data:
+                if isinstance(row, dict) and row.get("symbol", "").upper() == symbol:
+                    return row
+            # Fallback: return first entry if only one result
+            if len(data) == 1 and isinstance(data[0], dict):
+                return data[0]
+        elif isinstance(data, dict):
+            return data
+        return None
+
     # ── Parse: ETH Markets (ETH price + ETH/BTC) ───────────────────
-    # Same endpoint as BTC coins-markets but with symbol=ETH
+    # Extracted from the same spot/coins-markets response as BTC
 
     def _parse_eth_markets(self, inputs, data):
         if not data or isinstance(data, Exception):
             return
+        row = self._find_symbol_in_list(data, "ETH")
         eth_price = 0.0
-        if isinstance(data, list):
-            for row in data:
-                if isinstance(row, dict):
-                    p = float(row.get("price", 0))
-                    if p > 0:
-                        eth_price = p
-                        break
-        elif isinstance(data, dict):
-            eth_price = float(data.get("price", 0))
+        if row:
+            eth_price = float(row.get("current_price", row.get("price", 0)))
         if eth_price > 0:
             inputs.eth_price = round(eth_price, 2)
             inputs.sources["eth_price"] = "CoinGlass v4 coins-markets (ETH)"
@@ -531,42 +540,39 @@ class DataServiceV76:
             logger.warning(f"NUPL field not found. Available keys: {list(entry.keys())}")
 
     # ── Parse: Funding Rates ───────────────────────────────────────
-    # Live response: [{"symbol":"BTC","stablecoin_margin_list":[{"exchange":"Binance","funding_rate":0.002,...},...]}]
+    # v4 response: [{"exchange":"Binance","funding_rate":0.00196,"next_funding_time":...}, ...]
 
     def _parse_funding(self, inputs, funding):
         if not funding or isinstance(funding, Exception):
             return
         rates = []
-        if isinstance(funding, list) and len(funding) > 0:
-            first = funding[0]
-            if isinstance(first, dict):
-                # v4 nests rates inside stablecoin_margin_list
-                margin_list = first.get("stablecoin_margin_list", [])
-                if margin_list:
-                    for item in margin_list:
-                        if isinstance(item, dict):
-                            r = item.get("funding_rate")
-                            if r is not None:
-                                try:
-                                    rates.append(float(r))
-                                except (ValueError, TypeError):
-                                    pass
-                # Also check token_margin_list
-                token_list = first.get("token_margin_list", [])
-                for item in (token_list or []):
-                    if isinstance(item, dict):
-                        r = item.get("funding_rate")
-                        if r is not None:
-                            try:
-                                rates.append(float(r))
-                            except (ValueError, TypeError):
-                                pass
+        if isinstance(funding, list):
+            for item in funding:
+                if not isinstance(item, dict):
+                    continue
+                r = item.get("funding_rate")
+                if r is not None:
+                    try:
+                        rates.append(float(r))
+                    except (ValueError, TypeError):
+                        pass
+        elif isinstance(funding, dict):
+            # Fallback: maybe nested under stablecoin_margin_list (older format)
+            margin_list = funding.get("stablecoin_margin_list", [])
+            for item in (margin_list or []):
+                if isinstance(item, dict):
+                    r = item.get("funding_rate")
+                    if r is not None:
+                        try:
+                            rates.append(float(r))
+                        except (ValueError, TypeError):
+                            pass
         if rates:
             inputs.funding_rate = round(sum(rates) / len(rates), 6)
             inputs.sources["funding_rate"] = f"CoinGlass v4 ({len(rates)} exchanges)"
 
     # ── Parse: Liquidations ────────────────────────────────────────
-    # Live response: [{"time":...,"aggregated_long_liquidation_usd":989010,"aggregated_short_liquidation_usd":956545}]
+    # v4 response: [{"symbol":"BTC","long_liquidation_usd_24h":...,"short_liquidation_usd_24h":...,"liquidation_usd_24h":...}]
 
     def _parse_liquidations(self, inputs, liq):
         if not liq or isinstance(liq, Exception):
@@ -574,10 +580,20 @@ class DataServiceV76:
         if isinstance(liq, list) and len(liq) > 0:
             entry = liq[0]
             if isinstance(entry, dict):
-                long_liq = float(entry.get("aggregated_long_liquidation_usd", 0))
-                short_liq = float(entry.get("aggregated_short_liquidation_usd", 0))
-                inputs.liquidation_24h = long_liq + short_liq
-                inputs.sources["liquidation"] = "CoinGlass v4"
+                # Try v4 field names first, then fall back to older names
+                total = float(entry.get("liquidation_usd_24h", 0))
+                if total > 0:
+                    inputs.liquidation_24h = total
+                else:
+                    long_liq = float(entry.get("long_liquidation_usd_24h",
+                                     entry.get("aggregated_long_liquidation_usd", 0)))
+                    short_liq = float(entry.get("short_liquidation_usd_24h",
+                                      entry.get("aggregated_short_liquidation_usd", 0)))
+                    inputs.liquidation_24h = long_liq + short_liq
+                if inputs.liquidation_24h > 0:
+                    inputs.sources["liquidation"] = "CoinGlass v4"
+                else:
+                    logger.warning(f"Liquidation fields not found. Keys: {list(entry.keys())}")
 
     # ── Parse: Long/Short Ratio (proper endpoint) ──────────────────
     # Live response: [{"time":...,"longRate":0.5123,"shortRate":0.4877,"longShortRatio":1.05}]
@@ -635,19 +651,14 @@ class DataServiceV76:
             logger.warning(f"Basis field not found. Available keys: {list(entry.keys())}")
 
     # ── Parse: RSI ───────────────────────────────────────────────────
-    # Live response: [{"symbol":"BTC","rsi_24h":55.3,...}]
+    # v4 response: [{"symbol":"BTC","rsi_24h":55.3,"current_price":84500,...}, ...]
 
     def _parse_rsi(self, inputs, data):
         if not data or isinstance(data, Exception):
             return
-        # Extract entry from list or dict
-        entry = None
-        if isinstance(data, list):
-            for row in data:
-                if isinstance(row, dict):
-                    entry = row
-                    break
-        elif isinstance(data, dict):
+        # Find BTC entry specifically
+        entry = self._find_symbol_in_list(data, "BTC")
+        if entry is None and isinstance(data, dict):
             entry = data
         if not isinstance(entry, dict):
             return
