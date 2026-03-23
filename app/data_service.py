@@ -15,7 +15,7 @@ Futures basis: futures/basis/history
 RSI: futures/rsi/list
 Funding rates: futures/funding-rate/exchange-list
 Liquidations: futures/liquidation/aggregated-history
-OI: futures/open-interest/exchange-list, futures/open-interest/ohlc-aggregated-history
+OI: futures/open-interest/history (1d OHLC, 2 candles for current + 24h change)
 Options: option/info, option/max-pain
 ETF: etf/bitcoin/flow-history, etf/bitcoin/list
 Put/call ratio: derived from option/max-pain OI
@@ -80,17 +80,12 @@ class CoinGlassClient:
             logger.error(f"CG exception {endpoint}: {e}")
             return None
 
-    # ── Futures OI Exchange List ────────────────────────────────────
-    # Response: [{"exchange":"All","symbol":"BTC","open_interest_usd":46817313373,"open_interest_quantity":665799,...}]
+    # ── OI History (for current OI + 24h change) ────────────────────
+    # Response: [{"time":...,"open":"2644845344","high":"2692643311","low":"2576975597","close":"2608846475"}]
+    # Values are OI in USD as strings. 1d interval, 2 candles for daily change calc.
 
-    async def get_oi_exchange_list(self, client, symbol="BTC"):
-        return await self._get(client, "futures/open-interest/exchange-list", {"symbol": symbol})
-
-    # ── OI Aggregated OHLC History (for 24h change calculation) ───
-    # Response: [{"t":...,"o":46000000000,"h":47000000000,"l":45000000000,"c":46500000000}]
-
-    async def get_oi_ohlc_history(self, client, symbol="BTC"):
-        return await self._get(client, "futures/open-interest/aggregated-history", {
+    async def get_oi_history(self, client, symbol="BTC"):
+        return await self._get(client, "futures/open-interest/history", {
             "symbol": symbol, "interval": "1d", "limit": 2,
         })
 
@@ -286,7 +281,7 @@ class DataServiceV76:
 
         results = await asyncio.gather(
             self.cg.get_coins_markets(client),         # 0  ← BTC + ETH prices
-            self.cg.get_oi_exchange_list(client),      # 1  ← futures OI
+            self.cg.get_oi_history(client),            # 1  ← OI current + 24h change
             self.cg.get_funding_rates(client),         # 2
             self.cg.get_liquidations(client),          # 3
             self.cg.get_etf_flows(client, 10),         # 4
@@ -303,19 +298,17 @@ class DataServiceV76:
             self.cg.get_long_short_ratio(client),       # 15
             self.cg.get_futures_basis(client),          # 16
             self.cg.get_rsi(client),                    # 17
-            self.cg.get_oi_ohlc_history(client),       # 18  ← OI OHLC for 24h change
             return_exceptions=True,
         )
 
-        (coins_mkts, oi_exch, funding, liq, etf_flows, etf_list, opt_info,
+        (coins_mkts, oi_hist, funding, liq, etf_flows, etf_list, opt_info,
          max_pain, sth, lth, nupl_data, fg, dom, prem, m2,
-         ls_ratio, basis, rsi, oi_ohlc) = results
+         ls_ratio, basis, rsi) = results
 
         # Parse in order: coins-markets first (BTC + ETH prices)
         self._parse_coins_markets(inputs, coins_mkts)
         self._parse_eth_markets(inputs, coins_mkts)
-        self._parse_oi_exchange_list(inputs, oi_exch)
-        self._parse_oi_ohlc(inputs, oi_ohlc)
+        self._parse_oi_history(inputs, oi_hist)
         self._parse_etf_flows(inputs, etf_flows)
         self._parse_sth(inputs, sth)
         self._parse_lth(inputs, lth)
@@ -379,74 +372,32 @@ class DataServiceV76:
                 inputs.eth_btc = round(eth_price / inputs.btc_price, 6)
                 inputs.sources["eth_btc"] = "Calculated (ETH/BTC)"
 
-    # ── Parse: Futures OI Exchange List ──────────────────────────────
-    # Live response: [{"exchange":"All","symbol":"BTC","open_interest_usd":46817313373,"open_interest_quantity":665799,...}]
-    # Provides OI data; BTC price fallback if coins-markets unavailable.
+    # ── Parse: OI History (current OI + 24h change) ─────────────────
+    # v4 response: [{"time":...,"open":"2644845344","high":"2692643311","low":"2576975597","close":"2608846475"}, ...]
+    # Two 1d candles: latest close = current OI, compare to previous close for 24h change.
 
-    def _parse_oi_exchange_list(self, inputs, oi_data):
-        if not oi_data or isinstance(oi_data, Exception):
-            return
-        if not isinstance(oi_data, list):
-            return
-        for row in oi_data:
-            if not isinstance(row, dict):
-                continue
-            if row.get("exchange") == "All":
-                oi_usd = float(row.get("open_interest_usd", 0))
-                oi_qty = float(row.get("open_interest_quantity", 0))
-                # Fallback price from OI ratio if coins-markets didn't provide one
-                if inputs.btc_price == 0 and oi_usd > 0 and oi_qty > 0:
-                    price = oi_usd / oi_qty
-                    inputs.btc_price = round(price, 2)
-                    inputs.sources["btc_price"] = "CoinGlass v4 Futures OI (fallback)"
-                    inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
-                # Store futures OI data
-                inputs.oi_total = oi_usd
-                # Try known field name variants for 24h OI change
-                oi_chg = None
-                for key in ("open_interest_change_percent_24h", "h24OiChangePercent",
-                            "oiChangePercent24H", "oiChangePercent", "changePercent24H"):
-                    if key in row and row[key] is not None:
-                        oi_chg = float(row[key])
-                        break
-                if oi_chg is not None:
-                    inputs.oi_change_24h_pct = oi_chg
-                else:
-                    # Log all keys so we can identify the correct field
-                    logger.warning(f"OI change field not found. Available keys: {list(row.keys())}")
-                inputs.sources["futures_oi"] = "CoinGlass v4 OI Exchange List"
-                break
-
-    # ── Parse: OI Aggregated OHLC History (24h change) ─────────────
-    # Response: [{"t":...,"o":46000000000,"h":47000000000,"l":45000000000,"c":46500000000}]
-    # We compute 24h change as (latest_close - prev_close) / prev_close * 100
-
-    def _parse_oi_ohlc(self, inputs, data):
+    def _parse_oi_history(self, inputs, data):
         if not data or isinstance(data, Exception):
             return
-        if not isinstance(data, list) or len(data) < 2:
-            if isinstance(data, list) and len(data) == 1:
-                logger.warning("OI OHLC: only 1 entry, cannot compute 24h change")
+        if not isinstance(data, list) or len(data) == 0:
             return
-        # Get last two entries for daily change
-        prev = data[-2] if isinstance(data[-2], dict) else None
+        # Latest candle = current OI
         curr = data[-1] if isinstance(data[-1], dict) else None
-        if not prev or not curr:
+        if not curr:
             return
-        # Try known field names for close OI
-        prev_oi = None
-        curr_oi = None
-        for key in ("c", "close", "closeOi", "close_oi", "openInterest"):
-            if key in curr and curr[key] is not None:
-                curr_oi = float(curr[key])
-                prev_oi = float(prev.get(key, 0))
-                break
-        if curr_oi and prev_oi and prev_oi > 0:
-            pct_change = (curr_oi - prev_oi) / prev_oi * 100
-            inputs.oi_change_24h_pct = round(pct_change, 2)
-            inputs.sources["oi_change"] = "CoinGlass v4 OI OHLC Aggregated"
-        else:
-            logger.warning(f"OI OHLC field not found. Keys: {list(curr.keys())}")
+        curr_oi = float(curr.get("close", curr.get("c", 0)))
+        if curr_oi > 0:
+            inputs.oi_total = curr_oi
+            inputs.sources["futures_oi"] = "CoinGlass v4 OI History"
+        # 24h change from two candles
+        if len(data) >= 2:
+            prev = data[-2] if isinstance(data[-2], dict) else None
+            if prev:
+                prev_oi = float(prev.get("close", prev.get("c", 0)))
+                if prev_oi > 0 and curr_oi > 0:
+                    pct_change = (curr_oi - prev_oi) / prev_oi * 100
+                    inputs.oi_change_24h_pct = round(pct_change, 2)
+                    inputs.sources["oi_change"] = "CoinGlass v4 OI History"
 
     # ── Parse: STH Realized Price ─────────────────────────────────
     # Live response: [{"timestamp":..., "price":71250, "sth_realized_price":85974}, ...]
