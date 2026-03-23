@@ -10,10 +10,10 @@ Fear & Greed: index/fear-greed-history
 Dominance: index/bitcoin-dominance
 M2: index/bitcoin-vs-global-m2-growth
 Coinbase Premium: coinbase-premium-index
-Long/short ratio: futures/global-long-short-account-ratio/history
-Futures basis: futures/basis/history
+Long/short ratio: futures/global-long-short-account-ratio/history (Binance)
+Futures basis: futures/basis/history (Binance)
 RSI: futures/rsi/list
-Funding rates: futures/funding-rate/exchange-list
+Funding rates: futures/funding-rate/history (Binance BTCUSDT)
 Liquidations: futures/liquidation/aggregated-history
 OI: futures/open-interest/history (1d OHLC, 2 candles for current + 24h change)
 Options: option/info, option/max-pain
@@ -90,16 +90,18 @@ class CoinGlassClient:
         })
 
     # ── Funding Rates ───────────────────────────────────────────────
-    # v4 Response: [{"time":...,"open":"0.004603","high":"0.009388","low":"-0.005063","close":"0.009229"}]
-    # 1d interval: smooths out intra-day noise; model scores on per-period % (-0.05 to +0.1)
+    # v4 funding-rate/history: OHLC funding rate data for a specific exchange+pair
+    # Response: [{"t":1636588800,"o":"0.0001","h":"0.0003","l":"-0.0001","c":"0.0002"}]
+    # Requires exchange + symbols params
 
     async def get_funding_rates(self, client, symbol="BTC"):
         return await self._get(client, "futures/funding-rate/history", {
-            "symbol": symbol, "interval": "1d", "limit": 1,
+            "exchange": "Binance", "symbols": f"{symbol}USDT",
+            "interval": "1d", "limit": 1,
         })
 
     # ── Liquidations ────────────────────────────────────────────────
-    # v4 Response: [{"time":...,"aggregated_long_liquidation_usd":5916885,"aggregated_short_liquidation_usd":12969583}]
+    # v4 aggregated-history Response: [{"time":...,"long_liquidation_usd":451394,"short_liquidation_usd":14222125}]
     # 1d interval: one candle = 24h of liquidation data
 
     async def get_liquidations(self, client, symbol="BTC"):
@@ -172,19 +174,21 @@ class CoinGlassClient:
         return await self._get(client, "spot/coins-markets", {"per_page": 10, "page": 1})
 
     # ── Long/Short Ratio ─────────────────────────────────────────────
-    # Response: [{"time":...,"global_account_long_percent":73.88,"global_account_short_percent":26.12,"global_account_long_short_ratio":2.83}]
+    # Response: [{"time":...,"longRate":0.5,"shortRate":0.5,"longShortRatio":1.0,...}]
+    # Requires exchange param; Binance has largest volume
 
     async def get_long_short_ratio(self, client, symbol="BTC"):
         return await self._get(client, "futures/global-long-short-account-ratio/history", {
-            "symbol": symbol, "interval": "4h", "limit": 1,
+            "symbol": symbol, "exchange": "Binance", "interval": "4h", "limit": 1,
         })
 
     # ── Futures Basis ────────────────────────────────────────────────
     # Response: [{"time":...,"open_basis":0.0504,"close_basis":0.0445,"open_change":39.5,"close_change":34.56}]
+    # Requires exchange param
 
     async def get_futures_basis(self, client, symbol="BTC"):
         return await self._get(client, "futures/basis/history", {
-            "symbol": symbol, "interval": "1d", "limit": 1,
+            "symbol": symbol, "exchange": "Binance", "interval": "1d", "limit": 1,
         })
 
     # ── RSI ──────────────────────────────────────────────────────────
@@ -497,7 +501,8 @@ class DataServiceV76:
             logger.warning(f"NUPL field not found. Available keys: {list(entry.keys())}")
 
     # ── Parse: Funding Rates ───────────────────────────────────────
-    # v4 response: [{"time":...,"open":"0.004603","high":"0.009388","low":"-0.005063","close":"0.009229"}]
+    # v4 history response: [{"t":1636588800,"o":"0.0001","h":"0.0003","l":"-0.0001","c":"0.0002"}]
+    # Fields may be t/o/h/l/c or time/open/high/low/close
 
     def _parse_funding(self, inputs, funding):
         if not funding or isinstance(funding, Exception):
@@ -509,9 +514,9 @@ class DataServiceV76:
             entry = funding
         if not isinstance(entry, dict):
             return
-        # Use close value from OHLC candle
+        # Use close value from OHLC candle (try both short and long field names)
         rate = None
-        for key in ("close", "open", "funding_rate"):
+        for key in ("c", "close", "o", "open", "rate", "funding_rate"):
             if key in entry and entry[key] is not None:
                 try:
                     rate = float(entry[key])
@@ -520,10 +525,12 @@ class DataServiceV76:
                     pass
         if rate is not None:
             inputs.funding_rate = round(rate, 6)
-            inputs.sources["funding_rate"] = "CoinGlass v4 Funding Rate"
+            inputs.sources["funding_rate"] = "CoinGlass v4 Funding Rate (Binance)"
+        else:
+            logger.warning(f"Funding rate field not found. Keys: {list(entry.keys())}")
 
     # ── Parse: Liquidations ────────────────────────────────────────
-    # v4 response: [{"time":...,"aggregated_long_liquidation_usd":5916885,"aggregated_short_liquidation_usd":12969583}]
+    # v4 response: [{"time":...,"long_liquidation_usd":451394,"short_liquidation_usd":14222125}]
 
     def _parse_liquidations(self, inputs, liq):
         if not liq or isinstance(liq, Exception):
@@ -531,8 +538,17 @@ class DataServiceV76:
         if isinstance(liq, list) and len(liq) > 0:
             entry = liq[-1] if isinstance(liq[-1], dict) else liq[0]
             if isinstance(entry, dict):
-                long_liq = float(entry.get("aggregated_long_liquidation_usd", 0))
-                short_liq = float(entry.get("aggregated_short_liquidation_usd", 0))
+                long_liq = 0.0
+                short_liq = 0.0
+                # Try multiple field name variants
+                for key in ("long_liquidation_usd", "aggregated_long_liquidation_usd", "longLiquidationUsd"):
+                    if key in entry and entry[key] is not None:
+                        long_liq = float(entry[key])
+                        break
+                for key in ("short_liquidation_usd", "aggregated_short_liquidation_usd", "shortLiquidationUsd"):
+                    if key in entry and entry[key] is not None:
+                        short_liq = float(entry[key])
+                        break
                 inputs.liquidation_24h = long_liq + short_liq
                 if inputs.liquidation_24h > 0:
                     inputs.sources["liquidation"] = "CoinGlass v4"

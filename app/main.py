@@ -282,10 +282,10 @@ async def debug_raw_api():
 
     headers = {"accept": "application/json", "CG-API-KEY": COINGLASS_API_KEY}
     endpoints = {
-        "funding": ("futures/funding-rate/history", {"symbol": "BTC", "interval": "1d", "limit": 1}),
-        "long_short": ("futures/global-long-short-account-ratio/history", {"symbol": "BTC", "interval": "4h", "limit": 1}),
+        "funding": ("futures/funding-rate/history", {"exchange": "Binance", "symbols": "BTCUSDT", "interval": "1d", "limit": 1}),
+        "long_short": ("futures/global-long-short-account-ratio/history", {"symbol": "BTC", "exchange": "Binance", "interval": "4h", "limit": 1}),
         "liquidations": ("futures/liquidation/aggregated-history", {"symbol": "BTC", "interval": "1d", "limit": 1}),
-        "basis": ("futures/basis/history", {"symbol": "BTC", "interval": "1d", "limit": 1}),
+        "basis": ("futures/basis/history", {"symbol": "BTC", "exchange": "Binance", "interval": "1d", "limit": 1}),
         "oi": ("futures/open-interest/history", {"symbol": "BTC", "interval": "1d", "limit": 2}),
     }
 
