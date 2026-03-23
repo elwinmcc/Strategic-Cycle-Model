@@ -95,10 +95,12 @@ class CoinGlassClient:
         })
 
     # ── Funding Rates ───────────────────────────────────────────────
-    # v4 Response: [{"exchange":"Binance","funding_rate":0.00196,"next_funding_time":...,"position_value_usd":...}]
+    # v4 Response: [{"time":...,"open":"0.004603","high":"0.009388","low":"-0.005063","close":"0.009229"}]
 
     async def get_funding_rates(self, client, symbol="BTC"):
-        return await self._get(client, "futures/funding-rate/exchange-list", {"symbol": symbol})
+        return await self._get(client, "futures/funding-rate/history", {
+            "symbol": symbol, "interval": "30m", "limit": 1,
+        })
 
     # ── Liquidations ────────────────────────────────────────────────
     # v4 Response: [{"symbol":"BTC","long_liquidation_usd_24h":...,"short_liquidation_usd_24h":...}]
@@ -542,36 +544,30 @@ class DataServiceV76:
             logger.warning(f"NUPL field not found. Available keys: {list(entry.keys())}")
 
     # ── Parse: Funding Rates ───────────────────────────────────────
-    # v4 response: [{"exchange":"Binance","funding_rate":0.00196,"next_funding_time":...}, ...]
+    # v4 response: [{"time":...,"open":"0.004603","high":"0.009388","low":"-0.005063","close":"0.009229"}]
 
     def _parse_funding(self, inputs, funding):
         if not funding or isinstance(funding, Exception):
             return
-        rates = []
-        if isinstance(funding, list):
-            for item in funding:
-                if not isinstance(item, dict):
-                    continue
-                r = item.get("funding_rate")
-                if r is not None:
-                    try:
-                        rates.append(float(r))
-                    except (ValueError, TypeError):
-                        pass
+        entry = None
+        if isinstance(funding, list) and len(funding) > 0:
+            entry = funding[-1] if isinstance(funding[-1], dict) else funding[0]
         elif isinstance(funding, dict):
-            # Fallback: maybe nested under stablecoin_margin_list (older format)
-            margin_list = funding.get("stablecoin_margin_list", [])
-            for item in (margin_list or []):
-                if isinstance(item, dict):
-                    r = item.get("funding_rate")
-                    if r is not None:
-                        try:
-                            rates.append(float(r))
-                        except (ValueError, TypeError):
-                            pass
-        if rates:
-            inputs.funding_rate = round(sum(rates) / len(rates), 6)
-            inputs.sources["funding_rate"] = f"CoinGlass v4 ({len(rates)} exchanges)"
+            entry = funding
+        if not isinstance(entry, dict):
+            return
+        # Use close value from OHLC candle
+        rate = None
+        for key in ("close", "open", "funding_rate"):
+            if key in entry and entry[key] is not None:
+                try:
+                    rate = float(entry[key])
+                    break
+                except (ValueError, TypeError):
+                    pass
+        if rate is not None:
+            inputs.funding_rate = round(rate, 6)
+            inputs.sources["funding_rate"] = "CoinGlass v4 Funding Rate"
 
     # ── Parse: Liquidations ────────────────────────────────────────
     # v4 response: [{"symbol":"BTC","long_liquidation_usd_24h":...,"short_liquidation_usd_24h":...,"liquidation_usd_24h":...}]
