@@ -96,10 +96,11 @@ class CoinGlassClient:
 
     # ── Funding Rates ───────────────────────────────────────────────
     # v4 Response: [{"time":...,"open":"0.004603","high":"0.009388","low":"-0.005063","close":"0.009229"}]
+    # 1d interval: smooths out intra-day noise; model scores on per-period % (-0.05 to +0.1)
 
     async def get_funding_rates(self, client, symbol="BTC"):
         return await self._get(client, "futures/funding-rate/history", {
-            "symbol": symbol, "interval": "30m", "limit": 1,
+            "symbol": symbol, "interval": "1d", "limit": 1,
         })
 
     # ── Liquidations ────────────────────────────────────────────────
@@ -179,7 +180,7 @@ class CoinGlassClient:
 
     async def get_long_short_ratio(self, client, symbol="BTC"):
         return await self._get(client, "futures/global-long-short-account-ratio/history", {
-            "symbol": symbol, "interval": "30m", "limit": 1,
+            "symbol": symbol, "interval": "4h", "limit": 1,
         })
 
     # ── Futures Basis ────────────────────────────────────────────────
@@ -187,7 +188,7 @@ class CoinGlassClient:
 
     async def get_futures_basis(self, client, symbol="BTC"):
         return await self._get(client, "futures/basis/history", {
-            "symbol": symbol, "interval": "30m", "limit": 1,
+            "symbol": symbol, "interval": "1d", "limit": 1,
         })
 
     # ── RSI ──────────────────────────────────────────────────────────
