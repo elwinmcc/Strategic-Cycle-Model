@@ -181,10 +181,12 @@ class CoinGlassClient:
         })
 
     # ── Futures Basis ────────────────────────────────────────────────
-    # Response: [{"time":...,"openBasis":5.2,"closeBasis":5.1,"annualizedBasis":8.3,...}]
+    # Response: [{"time":...,"open_basis":0.0504,"close_basis":0.0445,"open_change":39.5,"close_change":34.56}]
 
     async def get_futures_basis(self, client, symbol="BTC"):
-        return await self._get(client, "futures/basis/history", {"symbol": symbol})
+        return await self._get(client, "futures/basis/history", {
+            "symbol": symbol, "interval": "30m", "limit": 1,
+        })
 
     # ── RSI ──────────────────────────────────────────────────────────
     # Response: [{"symbol":"BTC","rsi_24h":55.3,"current_price":84500,...}]
@@ -624,12 +626,12 @@ class DataServiceV76:
                         logger.warning(f"L/S ratio field not found. Available keys: {list(entry.keys())}")
 
     # ── Parse: Futures Basis ─────────────────────────────────────────
-    # Live response: [{"time":...,"openBasis":5.2,"closeBasis":5.1,"annualizedBasis":8.3,...}]
+    # v4 response: [{"time":...,"open_basis":0.0504,"close_basis":0.0445,"open_change":39.5,"close_change":34.56}]
+    # Basis values are percentages (e.g. 0.0504 = 5.04%)
 
     def _parse_futures_basis(self, inputs, data):
         if not data or isinstance(data, Exception):
             return
-        # Handle both list and dict responses
         entry = None
         if isinstance(data, list) and len(data) > 0:
             entry = data[-1] if isinstance(data[-1], dict) else data[0]
@@ -637,14 +639,16 @@ class DataServiceV76:
             entry = data
         if not isinstance(entry, dict):
             return
-        # Try known field name variants for basis value
         basis = None
-        for key in ("annualizedBasis", "closeBasis", "openBasis", "basis",
-                     "annualized_basis", "close_basis", "basisRate", "basis_rate"):
+        for key in ("close_basis", "open_basis", "closeBasis", "openBasis",
+                     "annualizedBasis", "annualized_basis", "basis", "basisRate"):
             if key in entry and entry[key] is not None:
                 basis = float(entry[key])
                 break
         if basis is not None:
+            # API returns basis as a decimal ratio (0.0504 = 5.04%), model expects percentage
+            if abs(basis) < 1:
+                basis = basis * 100
             inputs.futures_basis = round(basis, 2)
             inputs.sources["futures_basis"] = "CoinGlass v4 Futures Basis"
         else:
