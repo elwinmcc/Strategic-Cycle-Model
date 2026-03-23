@@ -175,11 +175,11 @@ class CoinGlassClient:
         return await self._get(client, "spot/coins-markets", {"per_page": 10, "page": 1})
 
     # ── Long/Short Ratio ─────────────────────────────────────────────
-    # Response: [{"time":...,"longRate":0.5123,"shortRate":0.4877,"longShortRatio":1.05}]
+    # Response: [{"time":...,"global_account_long_percent":73.88,"global_account_short_percent":26.12,"global_account_long_short_ratio":2.83}]
 
     async def get_long_short_ratio(self, client, symbol="BTC"):
         return await self._get(client, "futures/global-long-short-account-ratio/history", {
-            "symbol": symbol, "interval": "h4", "limit": 6,
+            "symbol": symbol, "interval": "30m", "limit": 1,
         })
 
     # ── Futures Basis ────────────────────────────────────────────────
@@ -593,33 +593,39 @@ class DataServiceV76:
                 else:
                     logger.warning(f"Liquidation fields not found. Keys: {list(entry.keys())}")
 
-    # ── Parse: Long/Short Ratio (proper endpoint) ──────────────────
-    # Live response: [{"time":...,"longRate":0.5123,"shortRate":0.4877,"longShortRatio":1.05}]
+    # ── Parse: Long/Short Ratio ─────────────────────────────────────
+    # v4 response: [{"time":...,"global_account_long_percent":73.88,"global_account_short_percent":26.12,"global_account_long_short_ratio":2.83}]
 
     def _parse_long_short_ratio(self, inputs, data):
         if not data or isinstance(data, Exception):
             return
+        entry = None
         if isinstance(data, list) and len(data) > 0:
             entry = data[-1] if isinstance(data[-1], dict) else data[0]
-            if isinstance(entry, dict):
-                # Try known field name variants
-                ratio = None
-                for key in ("longShortRatio", "long_short_ratio", "longShortAccountRatio"):
-                    if key in entry and entry[key] is not None:
-                        ratio = float(entry[key])
-                        break
-                if ratio is not None:
-                    inputs.long_short_ratio = round(ratio, 2)
-                    inputs.sources["long_short"] = "CoinGlass v4 Global L/S Ratio"
-                else:
-                    # Fallback: compute from longRate/shortRate
-                    long_r = float(entry.get("longRate", entry.get("long_rate", 0)))
-                    short_r = float(entry.get("shortRate", entry.get("short_rate", 0)))
-                    if short_r > 0:
-                        inputs.long_short_ratio = round(long_r / short_r, 2)
-                        inputs.sources["long_short"] = "CoinGlass v4 Global L/S Ratio"
-                    else:
-                        logger.warning(f"L/S ratio field not found. Available keys: {list(entry.keys())}")
+        elif isinstance(data, dict):
+            entry = data
+        if not isinstance(entry, dict):
+            return
+        ratio = None
+        for key in ("global_account_long_short_ratio", "longShortRatio",
+                     "long_short_ratio", "longShortAccountRatio"):
+            if key in entry and entry[key] is not None:
+                ratio = float(entry[key])
+                break
+        if ratio is not None:
+            inputs.long_short_ratio = round(ratio, 2)
+            inputs.sources["long_short"] = "CoinGlass v4 Global L/S Ratio"
+        else:
+            # Fallback: compute from percent fields
+            long_pct = float(entry.get("global_account_long_percent",
+                             entry.get("longRate", entry.get("long_rate", 0))))
+            short_pct = float(entry.get("global_account_short_percent",
+                              entry.get("shortRate", entry.get("short_rate", 0))))
+            if short_pct > 0:
+                inputs.long_short_ratio = round(long_pct / short_pct, 2)
+                inputs.sources["long_short"] = "CoinGlass v4 Global L/S Ratio"
+            else:
+                logger.warning(f"L/S ratio field not found. Available keys: {list(entry.keys())}")
 
     # ── Parse: Futures Basis ─────────────────────────────────────────
     # v4 response: [{"time":...,"open_basis":0.0504,"close_basis":0.0445,"open_change":39.5,"close_change":34.56}]
