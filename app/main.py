@@ -247,6 +247,7 @@ async def debug_data():
             "futures_basis", "put_call_ratio", "max_pain", "options_oi",
             "etf_flow_daily", "etf_flow_weekly", "etf_cumulative",
             "coinbase_premium", "btc_dominance", "eth_price", "eth_btc",
+            "oi_total", "oi_change_24h_pct",
             "hy_oas", "yield_curve_2s10s", "initial_claims", "anfci",
             "fed_bs", "rrp", "tga", "global_m2_growth", "price_30d_ago",
         ]:
@@ -264,6 +265,48 @@ async def debug_data():
     except Exception as e:
         logger.error(f"Debug error: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/debug/raw")
+async def debug_raw_api():
+    """Test a single CoinGlass API call and return the raw response for debugging."""
+    import httpx
+    from app.data_service import COINGLASS_API_KEY, COINGLASS_BASE
+
+    results = {}
+    results["api_key_set"] = bool(COINGLASS_API_KEY)
+    results["api_key_prefix"] = COINGLASS_API_KEY[:8] + "..." if len(COINGLASS_API_KEY) > 8 else "(too short or empty)"
+
+    if not COINGLASS_API_KEY:
+        return JSONResponse(content=results)
+
+    headers = {"accept": "application/json", "CG-API-KEY": COINGLASS_API_KEY}
+    endpoints = {
+        "funding": ("futures/funding-rate/history", {"symbol": "BTC", "interval": "1d", "limit": 1}),
+        "long_short": ("futures/global-long-short-account-ratio/history", {"symbol": "BTC", "interval": "4h", "limit": 1}),
+        "liquidations": ("futures/liquidation/aggregated-history", {"symbol": "BTC", "interval": "1d", "limit": 1}),
+        "basis": ("futures/basis/history", {"symbol": "BTC", "interval": "1d", "limit": 1}),
+        "oi": ("futures/open-interest/history", {"symbol": "BTC", "interval": "1d", "limit": 2}),
+    }
+
+    async with httpx.AsyncClient() as client:
+        for name, (endpoint, params) in endpoints.items():
+            url = f"{COINGLASS_BASE}/{endpoint}"
+            try:
+                resp = await client.get(url, headers=headers, params=params, timeout=15)
+                raw = resp.json()
+                results[name] = {
+                    "status_code": resp.status_code,
+                    "response_code": raw.get("code"),
+                    "response_msg": raw.get("msg"),
+                    "response_success": raw.get("success"),
+                    "data_type": type(raw.get("data")).__name__ if "data" in raw else "missing",
+                    "data_preview": str(raw.get("data", ""))[:500],
+                }
+            except Exception as e:
+                results[name] = {"error": str(e)}
+
+    return JSONResponse(content=results)
 
 
 @app.exception_handler(404)
