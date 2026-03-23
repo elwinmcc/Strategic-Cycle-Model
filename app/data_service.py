@@ -104,11 +104,12 @@ class CoinGlassClient:
         })
 
     # ── Liquidations ────────────────────────────────────────────────
-    # v4 Response: [{"symbol":"BTC","long_liquidation_usd_24h":...,"short_liquidation_usd_24h":...}]
+    # v4 Response: [{"time":...,"aggregated_long_liquidation_usd":5916885,"aggregated_short_liquidation_usd":12969583}]
+    # 1d interval: one candle = 24h of liquidation data
 
     async def get_liquidations(self, client, symbol="BTC"):
         return await self._get(client, "futures/liquidation/aggregated-history", {
-            "symbol": symbol, "range": "24h",
+            "symbol": symbol, "interval": "1d", "limit": 1,
         })
 
     # ── ETF ─────────────────────────────────────────────────────────
@@ -571,24 +572,17 @@ class DataServiceV76:
             inputs.sources["funding_rate"] = "CoinGlass v4 Funding Rate"
 
     # ── Parse: Liquidations ────────────────────────────────────────
-    # v4 response: [{"symbol":"BTC","long_liquidation_usd_24h":...,"short_liquidation_usd_24h":...,"liquidation_usd_24h":...}]
+    # v4 response: [{"time":...,"aggregated_long_liquidation_usd":5916885,"aggregated_short_liquidation_usd":12969583}]
 
     def _parse_liquidations(self, inputs, liq):
         if not liq or isinstance(liq, Exception):
             return
         if isinstance(liq, list) and len(liq) > 0:
-            entry = liq[0]
+            entry = liq[-1] if isinstance(liq[-1], dict) else liq[0]
             if isinstance(entry, dict):
-                # Try v4 field names first, then fall back to older names
-                total = float(entry.get("liquidation_usd_24h", 0))
-                if total > 0:
-                    inputs.liquidation_24h = total
-                else:
-                    long_liq = float(entry.get("long_liquidation_usd_24h",
-                                     entry.get("aggregated_long_liquidation_usd", 0)))
-                    short_liq = float(entry.get("short_liquidation_usd_24h",
-                                      entry.get("aggregated_short_liquidation_usd", 0)))
-                    inputs.liquidation_24h = long_liq + short_liq
+                long_liq = float(entry.get("aggregated_long_liquidation_usd", 0))
+                short_liq = float(entry.get("aggregated_short_liquidation_usd", 0))
+                inputs.liquidation_24h = long_liq + short_liq
                 if inputs.liquidation_24h > 0:
                     inputs.sources["liquidation"] = "CoinGlass v4"
                 else:
