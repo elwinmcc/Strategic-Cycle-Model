@@ -48,6 +48,7 @@ function updateDashboard(data) {
     updateSignal(data);
     updateCompositeScore(data);
     updateLayers(data);
+    updateCycleIntelligence(data);
     updateMarketData(data);
     updateAudit(data);
     updateFooter(data);
@@ -97,6 +98,15 @@ function updateSignal(data) {
     const rationale = sig.rationale || [];
     document.getElementById('signal-rationale').textContent =
         Array.isArray(rationale) ? rationale.join(' | ') : rationale;
+
+    // Impulse probability (v7.7)
+    const impEl = document.getElementById('impulse-info');
+    if (impEl && sig.impulse_window) {
+        const imp = sig.impulse_probability || {};
+        impEl.innerHTML = `<span class="impulse-window ${sig.impulse_window.toLowerCase()}">${sig.impulse_window.replace('_',' ')}</span>` +
+            ` <span class="impulse-catalysts">${sig.catalysts_aligned || 0}/${sig.catalysts_total || 0} catalysts</span>` +
+            ` <span class="impulse-prob">6mo: ${imp['6m'] || '--'}%</span>`;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -143,24 +153,33 @@ function updateCompositeScore(data) {
 // ═══════════════════════════════════════════════════════════════════
 
 const LAYER_LABELS = {
-    institutional: 'Institutional',
+    institutional_flow: 'Institutional Flow',
+    institutional_struct: 'Institutional Structure',
     leverage_fragility: 'Leverage Fragility',
     derivatives: 'Derivatives',
     mvrv: 'MVRV',
+    liquidity_regime: 'Liquidity Regime',
     cycle_phase: 'Cycle Phase',
+    fed_transition: 'Fed Transition',
     global_liquidity: 'Global Liquidity',
     options_sentiment: 'Options Sentiment',
     credit: 'Credit',
-    macro_liquidity: 'Macro-Liquidity',
+    oil_energy: 'Oil/Energy Risk',
     support: 'Support',
+    sentiment: 'Sentiment',
+    // v7.6 compat
+    institutional: 'Institutional',
+    macro_liquidity: 'Macro-Liquidity',
     momentum: 'Momentum',
-    sentiment: 'Sentiment'
 };
 
 const LAYER_ORDER = [
-    'institutional', 'leverage_fragility', 'derivatives', 'mvrv',
-    'cycle_phase', 'global_liquidity', 'options_sentiment', 'credit',
-    'macro_liquidity', 'support', 'momentum', 'sentiment'
+    'institutional_flow', 'institutional_struct', 'leverage_fragility', 'derivatives',
+    'mvrv', 'liquidity_regime', 'cycle_phase', 'fed_transition',
+    'global_liquidity', 'options_sentiment', 'credit', 'oil_energy',
+    'support', 'sentiment',
+    // v7.6 fallbacks (only shown if v7.7 layers not present)
+    'institutional', 'macro_liquidity', 'momentum',
 ];
 
 function updateLayers(data) {
@@ -205,6 +224,68 @@ function getScoreColor(score) {
     if (score >= 45) return '#f59e0b';
     if (score >= 35) return '#f97316';
     return '#ef4444';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CYCLE INTELLIGENCE (v7.7)
+// ═══════════════════════════════════════════════════════════════════
+
+function updateCycleIntelligence(data) {
+    const intel = data.intelligence || {};
+    const cycle = data.cycle || {};
+    const el = document.getElementById('cycle-intelligence');
+    if (!el) return;
+
+    const pos = intel.position || cycle || {};
+    let html = '';
+
+    // Cycle Position
+    html += '<div class="cycle-position">';
+    html += `<div class="cycle-item"><span class="cycle-label">Liquidity Regime</span><span class="cycle-value">${(pos.liquidity_regime || '--').replace(/_/g, ' ')}</span></div>`;
+    html += `<div class="cycle-item"><span class="cycle-label">Business Cycle</span><span class="cycle-value">${(pos.business_cycle || pos.business_phase || '--').replace(/_/g, ' ')}</span></div>`;
+    html += `<div class="cycle-item"><span class="cycle-label">BTC Cycle</span><span class="cycle-value">${(pos.btc_cycle || pos.btc_phase || '--').replace(/_/g, ' ')}</span></div>`;
+    html += `<div class="cycle-item"><span class="cycle-label">Fed Chair</span><span class="cycle-value">${pos.fed_chair || '--'} (${(pos.chair_regime || '--').replace(/_/g, ' ')})</span></div>`;
+    if (pos.months_since_qt_end !== undefined) {
+        html += `<div class="cycle-item"><span class="cycle-label">Post-QT</span><span class="cycle-value">${pos.months_since_qt_end} months</span></div>`;
+    }
+    html += '</div>';
+
+    // Easing mechanisms
+    const easing = intel.easing_mechanisms || [];
+    if (easing.length > 0) {
+        html += '<div class="easing-table"><h4>Easing Mechanisms</h4>';
+        for (const em of easing) {
+            const pct = em.probability || 0;
+            const barW = Math.min(100, pct);
+            html += `<div class="easing-row">`;
+            html += `<div class="easing-bar" style="width:${barW}%"></div>`;
+            html += `<span class="easing-pct">${pct}%</span>`;
+            html += `<span class="easing-name">${em.mechanism}</span>`;
+            html += `<span class="easing-impact">${em.impact || ''}</span>`;
+            html += `</div>`;
+        }
+        html += '</div>';
+    }
+
+    // Accelerators / Decelerators
+    const accel = intel.accelerators || [];
+    const decel = intel.decelerators || [];
+    if (accel.length > 0 || decel.length > 0) {
+        html += '<div class="cycle-drivers">';
+        if (accel.length > 0) {
+            html += '<div class="drivers-col"><h4>Accelerators</h4>';
+            accel.forEach(a => html += `<div class="driver-item positive">+ ${a}</div>`);
+            html += '</div>';
+        }
+        if (decel.length > 0) {
+            html += '<div class="drivers-col"><h4>Decelerators</h4>';
+            decel.forEach(d => html += `<div class="driver-item negative">- ${d}</div>`);
+            html += '</div>';
+        }
+        html += '</div>';
+    }
+
+    el.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -265,6 +346,7 @@ function updateMarketData(data) {
     setText('anfci-value', (md.anfci || 0).toFixed(3));
     setText('net-liq', '$' + (md.net_liquidity_b || 0).toFixed(0) + 'B');
     setText('m2-growth', (md.global_m2_growth || 0).toFixed(1) + '%');
+    setText('wti-price', '$' + (md.wti_price || 0).toFixed(0));
 }
 
 // ═══════════════════════════════════════════════════════════════════

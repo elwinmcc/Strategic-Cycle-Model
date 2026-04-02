@@ -18,7 +18,8 @@ from datetime import datetime
 from typing import Dict
 import logging
 
-from model.btc_model_v76 import ModelInputs, run_analysis
+from model.btc_model_v76 import ModelInputs
+from model.btc_model_v77 import run_analysis
 from app.data_service import data_service
 
 logging.basicConfig(level=logging.INFO)
@@ -26,8 +27,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="BTC Econometric Model",
-    description="Live dashboard for the BTC Econometric Model v7.6",
-    version="7.6.0"
+    description="Live dashboard for the BTC Econometric Model v7.7",
+    version="7.7.0"
 )
 
 app.add_middleware(
@@ -222,7 +223,7 @@ async def health_check():
     fred_key = os.environ.get("FRED_API_KEY", "")
     return JSONResponse(content={
         "status": "healthy",
-        "model_version": "7.6.0",
+        "model_version": "7.7.0",
         "timestamp": datetime.now().isoformat(),
         "api_keys": {
             "coinglass": f"{'SET (' + cg_key[:4] + '...)' if cg_key else 'NOT SET'}",

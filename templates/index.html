@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BTC Econometric Model v7.6</title>
+    <title>BTC Econometric Model v7.7</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,8 +14,8 @@
         <!-- Header -->
         <header class="header">
             <div class="header-left">
-                <h1>BTC Econometric Model <span class="version">v7.6</span></h1>
-                <p class="tagline">CoinGlass API + FRED | 12-Layer Scoring Engine</p>
+                <h1>BTC Econometric Model <span class="version">v7.7</span></h1>
+                <p class="tagline">CoinGlass API + FRED | 14-Layer Cycle Intelligence Engine</p>
             </div>
             <div class="header-right">
                 <div class="price-display">
@@ -60,6 +60,9 @@
             <div class="signal-rationale" id="signal-rationale">
                 Loading analysis...
             </div>
+            <div class="impulse-info" id="impulse-info">
+                <!-- Populated by JS: impulse window + catalysts -->
+            </div>
         </section>
 
         <!-- Score Gauge -->
@@ -88,11 +91,19 @@
             </div>
         </section>
 
-        <!-- 12-Layer Scoring -->
+        <!-- 14-Layer Scoring -->
         <section class="layers-section">
-            <h2>12-Layer Scoring Engine</h2>
+            <h2>14-Layer Scoring Engine</h2>
             <div class="layers-grid" id="layers-grid">
                 <!-- Each layer rendered by JS -->
+            </div>
+        </section>
+
+        <!-- Cycle Intelligence (v7.7) -->
+        <section class="cycle-section">
+            <h2>Cycle Intelligence</h2>
+            <div id="cycle-intelligence">
+                <!-- Populated by JS -->
             </div>
         </section>
 
@@ -231,6 +242,10 @@
                         <span class="data-label">M2 Growth</span>
                         <span class="data-value" id="m2-growth">--%</span>
                     </div>
+                    <div class="data-item">
+                        <span class="data-label">WTI Oil</span>
+                        <span class="data-value" id="wti-price">$--</span>
+                    </div>
                 </div>
             </div>
         </section>
@@ -295,7 +310,7 @@
         <!-- Footer -->
         <footer class="footer">
             <div class="footer-left">
-                <span>BTC Econometric Model v7.6</span>
+                <span>BTC Econometric Model v7.7</span>
                 <span class="separator">|</span>
                 <span id="last-updated">Last updated: --</span>
             </div>

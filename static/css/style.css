@@ -1,4 +1,4 @@
-/* BTC Econometric Model v7.6 Dashboard */
+/* BTC Econometric Model v7.7 Dashboard */
 
 :root {
     --bg-primary: #0d1117;
@@ -681,4 +681,167 @@ body {
     .override-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CYCLE INTELLIGENCE (v7.7)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.cycle-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: var(--space-lg);
+    margin-bottom: var(--space-lg);
+}
+
+.cycle-section h2 {
+    color: var(--accent-purple);
+    margin-bottom: var(--space-md);
+}
+
+.cycle-position {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+    padding: var(--space-md);
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+}
+
+.cycle-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.cycle-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.cycle-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.easing-table {
+    margin-bottom: var(--space-md);
+}
+
+.easing-table h4 {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin-bottom: var(--space-sm);
+    text-transform: uppercase;
+}
+
+.easing-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 6px 8px;
+    margin-bottom: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.easing-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: rgba(63, 185, 80, 0.12);
+    border-radius: 4px;
+    z-index: 0;
+}
+
+.easing-pct {
+    position: relative;
+    z-index: 1;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent-green);
+    min-width: 35px;
+}
+
+.easing-name {
+    position: relative;
+    z-index: 1;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    flex: 1;
+}
+
+.easing-impact {
+    position: relative;
+    z-index: 1;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.cycle-drivers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-md);
+}
+
+.drivers-col h4 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    margin-bottom: var(--space-xs);
+}
+
+.drivers-col:first-child h4 { color: var(--accent-green); }
+.drivers-col:last-child h4 { color: var(--accent-red); }
+
+.driver-item {
+    font-size: 0.8rem;
+    padding: 4px 0;
+    color: var(--text-secondary);
+}
+
+.driver-item.positive { color: var(--accent-green); }
+.driver-item.negative { color: var(--accent-red); }
+
+/* Impulse Info */
+.impulse-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    margin-top: var(--space-sm);
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    font-size: 0.8rem;
+}
+
+.impulse-window {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+}
+
+.impulse-window.open { background: var(--accent-green-dim); color: var(--accent-green); }
+.impulse-window.forming { background: var(--accent-yellow-dim); color: var(--accent-yellow); }
+.impulse-window.not_open { background: var(--bg-tertiary); color: var(--text-muted); }
+
+.impulse-catalysts {
+    color: var(--text-secondary);
+}
+
+.impulse-prob {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent-blue);
+    font-weight: 600;
 }
