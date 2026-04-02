@@ -96,12 +96,21 @@ class CoinGlassClient:
                     return row
         return data
 
-    # ── OI Aggregated History (for 24h change calc — no exchange needed) ──
-    # Response: [{"t":...,"o":"2644845344","h":"2692643311","l":"2576975597","c":"2608846475"}]
+    # ── OI Aggregated History (for 24h change — uses coin symbol like BTC) ──
+    # Response: [{"t":...,"o":"2644845344","h":"...","l":"...","c":"2608846475"}]
 
     async def get_oi_aggregated_history(self, client, symbol="BTC"):
         return await self._get(client, "futures/open-interest/aggregated-history", {
             "symbol": symbol, "interval": "1d", "limit": 2,
+        })
+
+    # ── OI Per-Exchange History (fallback — uses trading pair like BTCUSDT) ──
+    # Response: [{"time":...,"open":"2644845344","high":"...","low":"...","close":"2608846475"}]
+    # Requires: exchange (default Binance), symbol as pair (default BTCUSDT)
+
+    async def get_oi_history(self, client, exchange="Binance", symbol="BTCUSDT"):
+        return await self._get(client, "futures/open-interest/history", {
+            "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 2,
         })
 
     # ── Funding Rate History (fallback — Binance BTCUSDT) ─────────
@@ -306,12 +315,13 @@ class DataServiceV76:
             self.cg.get_global_m2(client),                 # 14
             self.cg.get_futures_basis(client),             # 15
             self.cg.get_rsi(client),                       # 16
+            self.cg.get_oi_history(client),                # 17 ← OI per-exchange fallback (Binance BTCUSDT)
             return_exceptions=True,
         )
 
         (futures_mkts, spot_mkts, oi_hist, funding_hist, etf_flows, etf_list,
          opt_info, max_pain, sth, lth, nupl_data, fg, dom, prem, m2,
-         basis, rsi) = results
+         basis, rsi, oi_exchange) = results
 
         # Parse: futures/coins-markets FIRST (price, OI, funding, liq, L/S)
         self._parse_futures_markets(inputs, futures_mkts)
@@ -319,6 +329,8 @@ class DataServiceV76:
         self._parse_coins_markets(inputs, spot_mkts)
         self._parse_eth_markets(inputs, spot_mkts, futures_mkts)
         self._parse_oi_history(inputs, oi_hist)
+        # Fallback: per-exchange OI history (Binance BTCUSDT) if aggregated didn't provide
+        self._parse_oi_exchange_history(inputs, oi_exchange)
         # Fallback: funding-rate/history if coins-markets didn't provide funding
         self._parse_funding_history(inputs, funding_hist)
         self._parse_etf_flows(inputs, etf_flows)
@@ -460,6 +472,31 @@ class DataServiceV76:
                     pct_change = (curr_oi - prev_oi) / prev_oi * 100
                     inputs.oi_change_24h_pct = round(pct_change, 2)
                     inputs.sources["oi_change"] = "CoinGlass v4 OI Aggregated History"
+
+    # ── Parse: OI Per-Exchange History (fallback for OI + 24h change) ──
+    # Response: [{"time":...,"open":"2644845344","high":"...","low":"...","close":"2608846475"}, ...]
+    # Only used if futures/coins-markets AND aggregated history didn't provide OI data.
+
+    def _parse_oi_exchange_history(self, inputs, data):
+        if not data or isinstance(data, Exception):
+            return
+        if not isinstance(data, list) or len(data) == 0:
+            return
+        curr = data[-1] if isinstance(data[-1], dict) else None
+        if not curr:
+            return
+        curr_oi = float(curr.get("close", curr.get("c", 0)))
+        if curr_oi > 0 and inputs.oi_total == 0:
+            inputs.oi_total = curr_oi
+            inputs.sources["futures_oi"] = "CoinGlass v4 OI History (Binance BTCUSDT)"
+        if len(data) >= 2 and inputs.oi_change_24h_pct == 0:
+            prev = data[-2] if isinstance(data[-2], dict) else None
+            if prev:
+                prev_oi = float(prev.get("close", prev.get("c", 0)))
+                if prev_oi > 0 and curr_oi > 0:
+                    pct_change = (curr_oi - prev_oi) / prev_oi * 100
+                    inputs.oi_change_24h_pct = round(pct_change, 2)
+                    inputs.sources["oi_change"] = "CoinGlass v4 OI History (Binance BTCUSDT)"
 
     # ── Parse: STH Realized Price ─────────────────────────────────
     # Live response: [{"timestamp":..., "price":71250, "sth_realized_price":85974}, ...]
