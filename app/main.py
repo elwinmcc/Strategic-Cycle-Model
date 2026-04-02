@@ -285,8 +285,11 @@ async def debug_raw_api():
     endpoints = {
         "futures_coins_markets": ("futures/coins-markets", {"per_page": 2, "page": 1}),
         "spot_coins_markets": ("spot/coins-markets", {"per_page": 2, "page": 1}),
-        "oi_aggregated": ("futures/open-interest/aggregated-history", {"symbol": "BTC", "interval": "1d", "limit": 2}),
-        "basis": ("futures/basis/history", {"symbol": "BTC", "exchange": "Binance", "interval": "1d", "limit": 1}),
+        "oi_history": ("futures/open-interest/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 2}),
+        "funding_rate": ("futures/funding-rate/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 1}),
+        "liquidation": ("futures/liquidation/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 1}),
+        "long_short": ("futures/global-long-short-account-ratio/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 1}),
+        "basis": ("futures/basis/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 1}),
         "etf_flows": ("etf/bitcoin/flow-history", {"limit": 2}),
     }
 
