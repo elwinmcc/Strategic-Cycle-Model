@@ -122,12 +122,13 @@ class CoinGlassClient:
             "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 1,
         })
 
-    # ── Liquidations (fallback if coins-markets doesn't provide) ────
-    # Response: [{"time":...,"long_liquidation_usd":451394,"short_liquidation_usd":14222125}]
+    # ── Liquidations Per-Exchange (fallback — Binance BTCUSDT) ────
+    # Response: [{"time":...,"long_liquidation_usd":"2369935.19562","short_liquidation_usd":"6947459.43674"}]
+    # Requires: exchange (default Binance), symbol as trading pair (default BTCUSDT)
 
-    async def get_liquidations(self, client, symbol="BTC"):
-        return await self._get(client, "futures/liquidation/aggregated-history", {
-            "symbol": symbol, "interval": "1d", "limit": 1,
+    async def get_liquidation_history(self, client, exchange="Binance", symbol="BTCUSDT"):
+        return await self._get(client, "futures/liquidation/history", {
+            "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 1,
         })
 
     # ── ETF ─────────────────────────────────────────────────────────
@@ -316,12 +317,13 @@ class DataServiceV76:
             self.cg.get_futures_basis(client),             # 15
             self.cg.get_rsi(client),                       # 16
             self.cg.get_oi_history(client),                # 17 ← OI per-exchange fallback (Binance BTCUSDT)
+            self.cg.get_liquidation_history(client),       # 18 ← Liquidation per-exchange fallback (Binance BTCUSDT)
             return_exceptions=True,
         )
 
         (futures_mkts, spot_mkts, oi_hist, funding_hist, etf_flows, etf_list,
          opt_info, max_pain, sth, lth, nupl_data, fg, dom, prem, m2,
-         basis, rsi, oi_exchange) = results
+         basis, rsi, oi_exchange, liq_hist) = results
 
         # Parse: futures/coins-markets FIRST (price, OI, funding, liq, L/S)
         self._parse_futures_markets(inputs, futures_mkts)
@@ -331,6 +333,8 @@ class DataServiceV76:
         self._parse_oi_history(inputs, oi_hist)
         # Fallback: per-exchange OI history (Binance BTCUSDT) if aggregated didn't provide
         self._parse_oi_exchange_history(inputs, oi_exchange)
+        # Fallback: liquidation/history (Binance BTCUSDT) if coins-markets didn't provide
+        self._parse_liquidation_history(inputs, liq_hist)
         # Fallback: funding-rate/history if coins-markets didn't provide funding
         self._parse_funding_history(inputs, funding_hist)
         self._parse_etf_flows(inputs, etf_flows)
@@ -497,6 +501,27 @@ class DataServiceV76:
                     pct_change = (curr_oi - prev_oi) / prev_oi * 100
                     inputs.oi_change_24h_pct = round(pct_change, 2)
                     inputs.sources["oi_change"] = "CoinGlass v4 OI History (Binance BTCUSDT)"
+
+    # ── Parse: Liquidation Per-Exchange History (fallback) ──────────
+    # Response: [{"time":...,"long_liquidation_usd":"2369935.19562","short_liquidation_usd":"6947459.43674"}]
+    # Only used if futures/coins-markets didn't already provide liquidation data.
+
+    def _parse_liquidation_history(self, inputs, data):
+        if inputs.liquidation_24h > 0:
+            return
+        if not data or isinstance(data, Exception):
+            return
+        if not isinstance(data, list) or len(data) == 0:
+            return
+        entry = data[-1] if isinstance(data[-1], dict) else None
+        if not entry:
+            return
+        long_liq = float(entry.get("long_liquidation_usd", 0))
+        short_liq = float(entry.get("short_liquidation_usd", 0))
+        total = long_liq + short_liq
+        if total > 0:
+            inputs.liquidation_24h = total
+            inputs.sources["liquidation"] = "CoinGlass v4 Liquidation History (Binance BTCUSDT)"
 
     # ── Parse: STH Realized Price ─────────────────────────────────
     # Live response: [{"timestamp":..., "price":71250, "sth_realized_price":85974}, ...]
