@@ -189,11 +189,11 @@ class CoinGlassClient:
 
     # ── Futures Basis ────────────────────────────────────────────────
     # Response: [{"time":...,"open_basis":0.0504,"close_basis":0.0445,"open_change":39.5,"close_change":34.56}]
-    # Requires exchange param
+    # Requires: exchange (default Binance), symbol as trading pair (default BTCUSDT), interval
 
-    async def get_futures_basis(self, client, symbol="BTC"):
+    async def get_futures_basis(self, client, exchange="Binance", symbol="BTCUSDT"):
         return await self._get(client, "futures/basis/history", {
-            "symbol": symbol, "exchange": "Binance", "interval": "1d", "limit": 1,
+            "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 1,
         })
 
     # ── RSI ──────────────────────────────────────────────────────────
