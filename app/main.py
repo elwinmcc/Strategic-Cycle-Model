@@ -249,7 +249,7 @@ async def debug_data():
             "coinbase_premium", "btc_dominance", "eth_price", "eth_btc",
             "oi_total", "oi_change_24h_pct",
             "hy_oas", "yield_curve_2s10s", "initial_claims", "anfci",
-            "fed_bs", "rrp", "tga", "global_m2_growth", "price_30d_ago",
+            "fed_bs", "rrp", "tga", "wti_price", "global_m2_growth", "price_30d_ago",
         ]:
             val = getattr(inputs, field_name, None)
             fields[field_name] = {"value": val, "populated": val is not None and val != 0}
@@ -282,11 +282,11 @@ async def debug_raw_api():
 
     headers = {"accept": "application/json", "CG-API-KEY": COINGLASS_API_KEY}
     endpoints = {
-        "funding": ("futures/funding-rate/history", {"exchange": "Binance", "symbols": "BTCUSDT", "interval": "1d", "limit": 1}),
-        "long_short": ("futures/global-long-short-account-ratio/history", {"symbol": "BTC", "exchange": "Binance", "interval": "4h", "limit": 1}),
-        "liquidations": ("futures/liquidation/aggregated-history", {"symbol": "BTC", "interval": "1d", "limit": 1}),
+        "futures_coins_markets": ("futures/coins-markets", {"per_page": 2, "page": 1}),
+        "spot_coins_markets": ("spot/coins-markets", {"per_page": 2, "page": 1}),
+        "oi_aggregated": ("futures/open-interest/aggregated-history", {"symbol": "BTC", "interval": "1d", "limit": 2}),
         "basis": ("futures/basis/history", {"symbol": "BTC", "exchange": "Binance", "interval": "1d", "limit": 1}),
-        "oi": ("futures/open-interest/history", {"symbol": "BTC", "interval": "1d", "limit": 2}),
+        "etf_flows": ("etf/bitcoin/flow-history", {"limit": 2}),
     }
 
     async with httpx.AsyncClient() as client:

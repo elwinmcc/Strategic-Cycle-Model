@@ -75,6 +75,9 @@ class ModelInputs:
     rsi_daily: float = 50.0
     price_30d_ago: float = 0.0
 
+    # Energy
+    wti_price: float = 0.0
+
     # Global
     global_m2_growth: float = 0.0
 
@@ -124,6 +127,7 @@ class ModelInputs:
             "tga": self.tga,
             "rsi_daily": self.rsi_daily,
             "price_30d_ago": self.price_30d_ago,
+            "wti_price": self.wti_price,
             "global_m2_growth": self.global_m2_growth,
             "eth_price": self.eth_price,
             "eth_btc": self.eth_btc,
@@ -473,6 +477,7 @@ def run_analysis(inputs: ModelInputs) -> dict:
             "rrp": inputs.rrp,
             "tga": inputs.tga,
             "global_m2_growth": inputs.global_m2_growth,
+            "wti_price": inputs.wti_price,
         },
         "sources": inputs.sources,
         "warnings": inputs.warnings,

@@ -1,25 +1,28 @@
 """
-Data Service for BTC Econometric Model v7.6
+Data Service for BTC Econometric Model v7.7
 Primary: CoinGlass API v4 (docs.coinglass.com)
 Secondary: FRED API (macro/credit/cycle)
 
-BTC/ETH price: spot/coins-markets
-On-chain: index/bitcoin-sth-realized-price, index/bitcoin-lth-realized-price
-NUPL: index/bitcoin-net-unrealized-profit-loss
-Fear & Greed: index/fear-greed-history
-Dominance: index/bitcoin-dominance
-M2: index/bitcoin-vs-global-m2-growth
-Coinbase Premium: coinbase-premium-index
-Long/short ratio: futures/global-long-short-account-ratio/history (Binance)
-Futures basis: futures/basis/history (Binance)
-RSI: futures/rsi/list
-Funding rates: futures/funding-rate/history (Binance BTCUSDT)
-Liquidations: futures/liquidation/aggregated-history
-OI: futures/open-interest/history (1d OHLC, 2 candles for current + 24h change)
-Options: option/info, option/max-pain
-ETF: etf/bitcoin/flow-history, etf/bitcoin/list
-Put/call ratio: derived from option/max-pain OI
-MVRV: calculated from STH/LTH realized prices
+PRIMARY (single call):
+  futures/coins-markets — BTC price, OI, funding rate, liquidation, L/S ratio
+
+SUPPLEMENTARY:
+  spot/coins-markets — BTC+ETH prices (fallback)
+  futures/open-interest/aggregated-history — OI 24h change
+  futures/basis/history — futures basis (Binance)
+  futures/rsi/list — RSI
+  option/info, option/max-pain — options data
+  etf/bitcoin/flow-history, etf/bitcoin/list — ETF flows
+  index/bitcoin-sth-realized-price — STH realized price
+  index/bitcoin-lth-realized-price — LTH realized price
+  index/bitcoin-net-unrealized-profit-loss — NUPL
+  index/fear-greed-history — Fear & Greed
+  index/bitcoin-dominance — BTC dominance
+  index/bitcoin-vs-global-m2-growth — Global M2
+  coinbase-premium-index — Coinbase premium
+  MVRV: calculated from STH/LTH realized prices
+
+FRED: BAMLH0A0HYM2, T10Y2Y, ICSA, ANFCI, WALCL, RRPONTSYD, WTREGEN, DCOILWTICO
 """
 
 import os
@@ -80,29 +83,29 @@ class CoinGlassClient:
             logger.error(f"CG exception {endpoint}: {e}")
             return None
 
-    # ── OI History (for current OI + 24h change) ────────────────────
-    # Response: [{"time":...,"open":"2644845344","high":"2692643311","low":"2576975597","close":"2608846475"}]
-    # Values are OI in USD as strings. 1d interval, 2 candles for daily change calc.
+    # ── Futures Coins Markets (PRIMARY: price + OI + funding + liq + L/S) ──
+    # Response: [{"symbol":"BTC","current_price":84773.6,"avg_funding_rate_by_oi":0.00196,
+    #   "open_interest_usd":55002072334,"liquidation_usd_24h":27519292,
+    #   "long_short_ratio_24h":1.0313,"open_interest_change_percent_24h":4.58,...}]
 
-    async def get_oi_history(self, client, symbol="BTC"):
-        return await self._get(client, "futures/open-interest/history", {
+    async def get_futures_coins_markets(self, client, symbol="BTC"):
+        data = await self._get(client, "futures/coins-markets", {"per_page": 10, "page": 1})
+        if isinstance(data, list):
+            for row in data:
+                if isinstance(row, dict) and row.get("symbol", "").upper() == symbol:
+                    return row
+        return data
+
+    # ── OI Aggregated History (for 24h change calc — no exchange needed) ──
+    # Response: [{"t":...,"o":"2644845344","h":"2692643311","l":"2576975597","c":"2608846475"}]
+
+    async def get_oi_aggregated_history(self, client, symbol="BTC"):
+        return await self._get(client, "futures/open-interest/aggregated-history", {
             "symbol": symbol, "interval": "1d", "limit": 2,
         })
 
-    # ── Funding Rates ───────────────────────────────────────────────
-    # v4 funding-rate/history: OHLC funding rate data for a specific exchange+pair
-    # Response: [{"t":1636588800,"o":"0.0001","h":"0.0003","l":"-0.0001","c":"0.0002"}]
-    # Requires exchange + symbols params
-
-    async def get_funding_rates(self, client, symbol="BTC"):
-        return await self._get(client, "futures/funding-rate/history", {
-            "exchange": "Binance", "symbols": f"{symbol}USDT",
-            "interval": "1d", "limit": 1,
-        })
-
-    # ── Liquidations ────────────────────────────────────────────────
-    # v4 aggregated-history Response: [{"time":...,"long_liquidation_usd":451394,"short_liquidation_usd":14222125}]
-    # 1d interval: one candle = 24h of liquidation data
+    # ── Liquidations (fallback if coins-markets doesn't provide) ────
+    # Response: [{"time":...,"long_liquidation_usd":451394,"short_liquidation_usd":14222125}]
 
     async def get_liquidations(self, client, symbol="BTC"):
         return await self._get(client, "futures/liquidation/aggregated-history", {
@@ -173,14 +176,7 @@ class CoinGlassClient:
     async def get_coins_markets(self, client):
         return await self._get(client, "spot/coins-markets", {"per_page": 10, "page": 1})
 
-    # ── Long/Short Ratio ─────────────────────────────────────────────
-    # Response: [{"time":...,"longRate":0.5,"shortRate":0.5,"longShortRatio":1.0,...}]
-    # Requires exchange param; Binance has largest volume
-
-    async def get_long_short_ratio(self, client, symbol="BTC"):
-        return await self._get(client, "futures/global-long-short-account-ratio/history", {
-            "symbol": symbol, "exchange": "Binance", "interval": "4h", "limit": 1,
-        })
+    # NOTE: Long/short ratio now comes from futures/coins-markets (no separate call needed)
 
     # ── Futures Basis ────────────────────────────────────────────────
     # Response: [{"time":...,"open_basis":0.0504,"close_basis":0.0445,"open_change":39.5,"close_change":34.56}]
@@ -284,43 +280,40 @@ class DataServiceV76:
         logger.info("Fetching CoinGlass v4 data...")
 
         results = await asyncio.gather(
-            self.cg.get_coins_markets(client),         # 0  ← BTC + ETH prices
-            self.cg.get_oi_history(client),            # 1  ← OI current + 24h change
-            self.cg.get_funding_rates(client),         # 2
-            self.cg.get_liquidations(client),          # 3
-            self.cg.get_etf_flows(client, 10),         # 4
-            self.cg.get_etf_list(client),              # 5
-            self.cg.get_options_info(client),           # 6
-            self.cg.get_options_max_pain(client),       # 7
-            self.cg.get_sth_realized(client),           # 8
-            self.cg.get_lth_realized(client),           # 9
-            self.cg.get_nupl(client),                   # 10
-            self.cg.get_fear_greed(client),             # 11
-            self.cg.get_dominance(client),              # 12
-            self.cg.get_coinbase_premium(client),       # 13
-            self.cg.get_global_m2(client),              # 14
-            self.cg.get_long_short_ratio(client),       # 15
-            self.cg.get_futures_basis(client),          # 16
-            self.cg.get_rsi(client),                    # 17
+            self.cg.get_futures_coins_markets(client),  # 0  ← PRIMARY: price+OI+funding+liq+L/S
+            self.cg.get_coins_markets(client),          # 1  ← spot prices (BTC+ETH fallback)
+            self.cg.get_oi_aggregated_history(client),  # 2  ← OI 24h change
+            self.cg.get_etf_flows(client, 10),          # 3
+            self.cg.get_etf_list(client),               # 4
+            self.cg.get_options_info(client),            # 5
+            self.cg.get_options_max_pain(client),        # 6
+            self.cg.get_sth_realized(client),            # 7
+            self.cg.get_lth_realized(client),            # 8
+            self.cg.get_nupl(client),                    # 9
+            self.cg.get_fear_greed(client),              # 10
+            self.cg.get_dominance(client),               # 11
+            self.cg.get_coinbase_premium(client),        # 12
+            self.cg.get_global_m2(client),               # 13
+            self.cg.get_futures_basis(client),           # 14
+            self.cg.get_rsi(client),                     # 15
             return_exceptions=True,
         )
 
-        (coins_mkts, oi_hist, funding, liq, etf_flows, etf_list, opt_info,
+        (futures_mkts, spot_mkts, oi_hist, etf_flows, etf_list, opt_info,
          max_pain, sth, lth, nupl_data, fg, dom, prem, m2,
-         ls_ratio, basis, rsi) = results
+         basis, rsi) = results
 
-        # Parse in order: coins-markets first (BTC + ETH prices)
-        self._parse_coins_markets(inputs, coins_mkts)
-        self._parse_eth_markets(inputs, coins_mkts)
+        # Parse: futures/coins-markets FIRST (price, OI, funding, liq, L/S)
+        self._parse_futures_markets(inputs, futures_mkts)
+        # Fallback: spot/coins-markets for BTC+ETH prices if futures didn't provide
+        self._parse_coins_markets(inputs, spot_mkts)
+        self._parse_eth_markets(inputs, spot_mkts, futures_mkts)
         self._parse_oi_history(inputs, oi_hist)
         self._parse_etf_flows(inputs, etf_flows)
         self._parse_sth(inputs, sth)
         self._parse_lth(inputs, lth)
         self._compute_mvrv(inputs)
         self._parse_nupl(inputs, nupl_data)
-        self._parse_funding(inputs, funding)
-        self._parse_liquidations(inputs, liq)
-        self._parse_long_short_ratio(inputs, ls_ratio)
         self._parse_futures_basis(inputs, basis)
         self._parse_rsi(inputs, rsi)
         self._parse_etf_list(inputs, etf_list)
@@ -331,11 +324,61 @@ class DataServiceV76:
         self._parse_premium(inputs, prem)
         self._parse_m2(inputs, m2)
 
-    # ── Parse: Coins Markets (primary BTC price) ───────────────────
+    # ── Parse: Futures Coins Markets (PRIMARY — fills many fields) ──
+    # Response: {"symbol":"BTC","current_price":84773.6,"avg_funding_rate_by_oi":0.00196,
+    #   "open_interest_usd":55002072334,"liquidation_usd_24h":27519292,
+    #   "long_short_ratio_24h":1.0313,"open_interest_change_percent_24h":4.58,
+    #   "market_cap_usd":1683310500117}
+
+    def _parse_futures_markets(self, inputs, data):
+        if not data or isinstance(data, Exception) or not isinstance(data, dict):
+            return
+        # Price
+        price = float(data.get("current_price", data.get("price", 0)))
+        if price > 0:
+            inputs.btc_price = round(price, 2)
+            inputs.sources["btc_price"] = "CoinGlass v4 futures/coins-markets"
+            inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
+        # Market cap
+        mcap = float(data.get("market_cap_usd", data.get("marketCap", 0)))
+        if mcap > 0:
+            inputs.btc_market_cap = mcap
+        # OI
+        oi = float(data.get("open_interest_usd", data.get("openInterest", 0)))
+        if oi > 0:
+            inputs.oi_total = oi
+            inputs.sources["futures_oi"] = "CoinGlass v4 futures/coins-markets"
+        # OI 24h change
+        oi_chg = float(data.get("open_interest_change_percent_24h", 0))
+        if oi_chg != 0:
+            inputs.oi_change_24h_pct = round(oi_chg, 2)
+            inputs.sources["oi_change"] = "CoinGlass v4 futures/coins-markets"
+        # Funding rate (OI-weighted average across exchanges)
+        fr = float(data.get("avg_funding_rate_by_oi", data.get("fundingRate", 0)))
+        if fr != 0:
+            inputs.funding_rate = round(fr / 100, 6)  # API returns percentage, model expects decimal
+            inputs.sources["funding_rate"] = "CoinGlass v4 futures/coins-markets"
+        # Liquidation 24h
+        liq = float(data.get("liquidation_usd_24h", 0))
+        if liq > 0:
+            inputs.liquidation_24h = liq
+            inputs.sources["liquidation"] = "CoinGlass v4 futures/coins-markets"
+        # Long/Short ratio
+        ls = float(data.get("long_short_ratio_24h", data.get("long_short_ratio_1h", 0)))
+        if ls > 0:
+            inputs.long_short_ratio = round(ls, 3)
+            inputs.sources["long_short"] = "CoinGlass v4 futures/coins-markets"
+        logger.info(f"Futures markets: price={inputs.btc_price}, OI={inputs.oi_total:.0f}, "
+                     f"FR={inputs.funding_rate}, liq={inputs.liquidation_24h:.0f}, L/S={inputs.long_short_ratio}")
+
+    # ── Parse: Coins Markets (fallback BTC price from spot) ──────
     # v4 response: [{"symbol":"BTC","current_price":84500.12,"market_cap":...}, ...]
 
     def _parse_coins_markets(self, inputs, data):
         if not data or isinstance(data, Exception):
+            return
+        # Only use as fallback if futures didn't provide price
+        if inputs.btc_price > 0:
             return
         row = self._find_symbol_in_list(data, "BTC")
         if row:
@@ -360,15 +403,17 @@ class DataServiceV76:
         return None
 
     # ── Parse: ETH Markets (ETH price + ETH/BTC) ───────────────────
-    # Extracted from the same spot/coins-markets response as BTC
+    # Try spot/coins-markets first, then futures/coins-markets
 
-    def _parse_eth_markets(self, inputs, data):
+    def _parse_eth_markets(self, inputs, data, futures_data=None):
         if not data or isinstance(data, Exception):
-            return
-        row = self._find_symbol_in_list(data, "ETH")
+            data = None
         eth_price = 0.0
-        if row:
-            eth_price = float(row.get("current_price", row.get("price", 0)))
+        # Try spot data first
+        if data:
+            row = self._find_symbol_in_list(data, "ETH")
+            if row:
+                eth_price = float(row.get("current_price", row.get("price", 0)))
         if eth_price > 0:
             inputs.eth_price = round(eth_price, 2)
             inputs.sources["eth_price"] = "CoinGlass v4 coins-markets (ETH)"
@@ -376,32 +421,33 @@ class DataServiceV76:
                 inputs.eth_btc = round(eth_price / inputs.btc_price, 6)
                 inputs.sources["eth_btc"] = "Calculated (ETH/BTC)"
 
-    # ── Parse: OI History (current OI + 24h change) ─────────────────
-    # v4 response: [{"time":...,"open":"2644845344","high":"2692643311","low":"2576975597","close":"2608846475"}, ...]
-    # Two 1d candles: latest close = current OI, compare to previous close for 24h change.
+    # ── Parse: OI Aggregated History (fallback for OI + 24h change) ──
+    # v4 response: [{"t":...,"o":"2644845344","h":"...","l":"...","c":"2608846475"}, ...]
+    # Only used if futures/coins-markets didn't already provide OI data.
 
     def _parse_oi_history(self, inputs, data):
         if not data or isinstance(data, Exception):
             return
         if not isinstance(data, list) or len(data) == 0:
             return
-        # Latest candle = current OI
         curr = data[-1] if isinstance(data[-1], dict) else None
         if not curr:
             return
-        curr_oi = float(curr.get("close", curr.get("c", 0)))
-        if curr_oi > 0:
+        # Try both field name formats: long (close) and short (c)
+        curr_oi = float(curr.get("c", curr.get("close", 0)))
+        # Only use as fallback if futures/coins-markets didn't provide
+        if curr_oi > 0 and inputs.oi_total == 0:
             inputs.oi_total = curr_oi
-            inputs.sources["futures_oi"] = "CoinGlass v4 OI History"
-        # 24h change from two candles
-        if len(data) >= 2:
+            inputs.sources["futures_oi"] = "CoinGlass v4 OI Aggregated History"
+        # 24h change from two candles (always compute if not already set)
+        if len(data) >= 2 and inputs.oi_change_24h_pct == 0:
             prev = data[-2] if isinstance(data[-2], dict) else None
             if prev:
-                prev_oi = float(prev.get("close", prev.get("c", 0)))
+                prev_oi = float(prev.get("c", prev.get("close", 0)))
                 if prev_oi > 0 and curr_oi > 0:
                     pct_change = (curr_oi - prev_oi) / prev_oi * 100
                     inputs.oi_change_24h_pct = round(pct_change, 2)
-                    inputs.sources["oi_change"] = "CoinGlass v4 OI History"
+                    inputs.sources["oi_change"] = "CoinGlass v4 OI Aggregated History"
 
     # ── Parse: STH Realized Price ─────────────────────────────────
     # Live response: [{"timestamp":..., "price":71250, "sth_realized_price":85974}, ...]
@@ -500,94 +546,8 @@ class DataServiceV76:
         else:
             logger.warning(f"NUPL field not found. Available keys: {list(entry.keys())}")
 
-    # ── Parse: Funding Rates ───────────────────────────────────────
-    # v4 history response: [{"t":1636588800,"o":"0.0001","h":"0.0003","l":"-0.0001","c":"0.0002"}]
-    # Fields may be t/o/h/l/c or time/open/high/low/close
-
-    def _parse_funding(self, inputs, funding):
-        if not funding or isinstance(funding, Exception):
-            return
-        entry = None
-        if isinstance(funding, list) and len(funding) > 0:
-            entry = funding[-1] if isinstance(funding[-1], dict) else funding[0]
-        elif isinstance(funding, dict):
-            entry = funding
-        if not isinstance(entry, dict):
-            return
-        # Use close value from OHLC candle (try both short and long field names)
-        rate = None
-        for key in ("c", "close", "o", "open", "rate", "funding_rate"):
-            if key in entry and entry[key] is not None:
-                try:
-                    rate = float(entry[key])
-                    break
-                except (ValueError, TypeError):
-                    pass
-        if rate is not None:
-            inputs.funding_rate = round(rate, 6)
-            inputs.sources["funding_rate"] = "CoinGlass v4 Funding Rate (Binance)"
-        else:
-            logger.warning(f"Funding rate field not found. Keys: {list(entry.keys())}")
-
-    # ── Parse: Liquidations ────────────────────────────────────────
-    # v4 response: [{"time":...,"long_liquidation_usd":451394,"short_liquidation_usd":14222125}]
-
-    def _parse_liquidations(self, inputs, liq):
-        if not liq or isinstance(liq, Exception):
-            return
-        if isinstance(liq, list) and len(liq) > 0:
-            entry = liq[-1] if isinstance(liq[-1], dict) else liq[0]
-            if isinstance(entry, dict):
-                long_liq = 0.0
-                short_liq = 0.0
-                # Try multiple field name variants
-                for key in ("long_liquidation_usd", "aggregated_long_liquidation_usd", "longLiquidationUsd"):
-                    if key in entry and entry[key] is not None:
-                        long_liq = float(entry[key])
-                        break
-                for key in ("short_liquidation_usd", "aggregated_short_liquidation_usd", "shortLiquidationUsd"):
-                    if key in entry and entry[key] is not None:
-                        short_liq = float(entry[key])
-                        break
-                inputs.liquidation_24h = long_liq + short_liq
-                if inputs.liquidation_24h > 0:
-                    inputs.sources["liquidation"] = "CoinGlass v4"
-                else:
-                    logger.warning(f"Liquidation fields not found. Keys: {list(entry.keys())}")
-
-    # ── Parse: Long/Short Ratio ─────────────────────────────────────
-    # v4 response: [{"time":...,"global_account_long_percent":73.88,"global_account_short_percent":26.12,"global_account_long_short_ratio":2.83}]
-
-    def _parse_long_short_ratio(self, inputs, data):
-        if not data or isinstance(data, Exception):
-            return
-        entry = None
-        if isinstance(data, list) and len(data) > 0:
-            entry = data[-1] if isinstance(data[-1], dict) else data[0]
-        elif isinstance(data, dict):
-            entry = data
-        if not isinstance(entry, dict):
-            return
-        ratio = None
-        for key in ("global_account_long_short_ratio", "longShortRatio",
-                     "long_short_ratio", "longShortAccountRatio"):
-            if key in entry and entry[key] is not None:
-                ratio = float(entry[key])
-                break
-        if ratio is not None:
-            inputs.long_short_ratio = round(ratio, 2)
-            inputs.sources["long_short"] = "CoinGlass v4 Global L/S Ratio"
-        else:
-            # Fallback: compute from percent fields
-            long_pct = float(entry.get("global_account_long_percent",
-                             entry.get("longRate", entry.get("long_rate", 0))))
-            short_pct = float(entry.get("global_account_short_percent",
-                              entry.get("shortRate", entry.get("short_rate", 0))))
-            if short_pct > 0:
-                inputs.long_short_ratio = round(long_pct / short_pct, 2)
-                inputs.sources["long_short"] = "CoinGlass v4 Global L/S Ratio"
-            else:
-                logger.warning(f"L/S ratio field not found. Available keys: {list(entry.keys())}")
+    # NOTE: Funding rate, liquidation, and long/short ratio are now parsed from
+    # futures/coins-markets in _parse_futures_markets(). No separate endpoints needed.
 
     # ── Parse: Futures Basis ─────────────────────────────────────────
     # v4 response: [{"time":...,"open_basis":0.0504,"close_basis":0.0445,"open_change":39.5,"close_change":34.56}]
@@ -873,10 +833,11 @@ class DataServiceV76:
             self.fred.get_latest(client, "WALCL", lookback_days=14),
             self.fred.get_latest(client, "RRPONTSYD", lookback_days=14),
             self.fred.get_latest(client, "WTREGEN", lookback_days=14),
+            self.fred.get_latest(client, "DCOILWTICO", lookback_days=7),
             return_exceptions=True,
         )
 
-        hy, yc, claims, anfci, fed, rrp, tga = results
+        hy, yc, claims, anfci, fed, rrp, tga, wti = results
 
         if not isinstance(hy, Exception) and hy is not None:
             inputs.hy_oas = hy
@@ -905,6 +866,10 @@ class DataServiceV76:
         if not isinstance(tga, Exception) and tga is not None:
             inputs.tga = tga / 1000
             inputs.sources["tga"] = "FRED WTREGEN"
+
+        if not isinstance(wti, Exception) and wti is not None:
+            inputs.wti_price = wti
+            inputs.sources["wti"] = "FRED DCOILWTICO"
 
 
 # Singleton instance
