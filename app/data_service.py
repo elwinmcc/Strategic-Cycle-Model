@@ -104,6 +104,15 @@ class CoinGlassClient:
             "symbol": symbol, "interval": "1d", "limit": 2,
         })
 
+    # ── Funding Rate History (fallback — Binance BTCUSDT) ─────────
+    # Response: [{"time":1658880000000,"open":"0.004603","high":"0.009388","low":"-0.005063","close":"0.009229"}]
+    # Requires: exchange (default Binance), symbol (default BTCUSDT), interval
+
+    async def get_funding_rate_history(self, client, exchange="Binance", symbol="BTCUSDT"):
+        return await self._get(client, "futures/funding-rate/history", {
+            "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 1,
+        })
+
     # ── Liquidations (fallback if coins-markets doesn't provide) ────
     # Response: [{"time":...,"long_liquidation_usd":451394,"short_liquidation_usd":14222125}]
 
@@ -280,27 +289,28 @@ class DataServiceV76:
         logger.info("Fetching CoinGlass v4 data...")
 
         results = await asyncio.gather(
-            self.cg.get_futures_coins_markets(client),  # 0  ← PRIMARY: price+OI+funding+liq+L/S
-            self.cg.get_coins_markets(client),          # 1  ← spot prices (BTC+ETH fallback)
-            self.cg.get_oi_aggregated_history(client),  # 2  ← OI 24h change
-            self.cg.get_etf_flows(client, 10),          # 3
-            self.cg.get_etf_list(client),               # 4
-            self.cg.get_options_info(client),            # 5
-            self.cg.get_options_max_pain(client),        # 6
-            self.cg.get_sth_realized(client),            # 7
-            self.cg.get_lth_realized(client),            # 8
-            self.cg.get_nupl(client),                    # 9
-            self.cg.get_fear_greed(client),              # 10
-            self.cg.get_dominance(client),               # 11
-            self.cg.get_coinbase_premium(client),        # 12
-            self.cg.get_global_m2(client),               # 13
-            self.cg.get_futures_basis(client),           # 14
-            self.cg.get_rsi(client),                     # 15
+            self.cg.get_futures_coins_markets(client),    # 0  ← PRIMARY: price+OI+funding+liq+L/S
+            self.cg.get_coins_markets(client),            # 1  ← spot prices (BTC+ETH fallback)
+            self.cg.get_oi_aggregated_history(client),    # 2  ← OI 24h change
+            self.cg.get_funding_rate_history(client),     # 3  ← funding rate fallback (Binance)
+            self.cg.get_etf_flows(client, 10),            # 4
+            self.cg.get_etf_list(client),                 # 5
+            self.cg.get_options_info(client),              # 6
+            self.cg.get_options_max_pain(client),          # 7
+            self.cg.get_sth_realized(client),              # 8
+            self.cg.get_lth_realized(client),              # 9
+            self.cg.get_nupl(client),                      # 10
+            self.cg.get_fear_greed(client),                # 11
+            self.cg.get_dominance(client),                 # 12
+            self.cg.get_coinbase_premium(client),          # 13
+            self.cg.get_global_m2(client),                 # 14
+            self.cg.get_futures_basis(client),             # 15
+            self.cg.get_rsi(client),                       # 16
             return_exceptions=True,
         )
 
-        (futures_mkts, spot_mkts, oi_hist, etf_flows, etf_list, opt_info,
-         max_pain, sth, lth, nupl_data, fg, dom, prem, m2,
+        (futures_mkts, spot_mkts, oi_hist, funding_hist, etf_flows, etf_list,
+         opt_info, max_pain, sth, lth, nupl_data, fg, dom, prem, m2,
          basis, rsi) = results
 
         # Parse: futures/coins-markets FIRST (price, OI, funding, liq, L/S)
@@ -309,6 +319,8 @@ class DataServiceV76:
         self._parse_coins_markets(inputs, spot_mkts)
         self._parse_eth_markets(inputs, spot_mkts, futures_mkts)
         self._parse_oi_history(inputs, oi_hist)
+        # Fallback: funding-rate/history if coins-markets didn't provide funding
+        self._parse_funding_history(inputs, funding_hist)
         self._parse_etf_flows(inputs, etf_flows)
         self._parse_sth(inputs, sth)
         self._parse_lth(inputs, lth)
@@ -546,8 +558,37 @@ class DataServiceV76:
         else:
             logger.warning(f"NUPL field not found. Available keys: {list(entry.keys())}")
 
-    # NOTE: Funding rate, liquidation, and long/short ratio are now parsed from
-    # futures/coins-markets in _parse_futures_markets(). No separate endpoints needed.
+    # NOTE: Liquidation and long/short ratio are parsed from futures/coins-markets.
+    # Funding rate has a dedicated fallback from funding-rate/history (Binance BTCUSDT).
+
+    # ── Parse: Funding Rate History (fallback) ────────────────────
+    # Response: [{"time":1658880000000,"open":"0.004603","high":"0.009388",
+    #             "low":"-0.005063","close":"0.009229"}]
+
+    def _parse_funding_history(self, inputs, data):
+        # Only use as fallback if futures/coins-markets didn't provide funding
+        if inputs.funding_rate != 0:
+            return
+        if not data or isinstance(data, Exception):
+            return
+        entry = None
+        if isinstance(data, list) and len(data) > 0:
+            entry = data[-1] if isinstance(data[-1], dict) else data[0]
+        elif isinstance(data, dict):
+            entry = data
+        if not isinstance(entry, dict):
+            return
+        rate = None
+        for key in ("close", "open", "c", "o"):
+            if key in entry and entry[key] is not None:
+                try:
+                    rate = float(entry[key])
+                    break
+                except (ValueError, TypeError):
+                    pass
+        if rate is not None:
+            inputs.funding_rate = round(rate, 6)
+            inputs.sources["funding_rate"] = "CoinGlass v4 Funding Rate (Binance BTCUSDT)"
 
     # ── Parse: Futures Basis ─────────────────────────────────────────
     # v4 response: [{"time":...,"open_basis":0.0504,"close_basis":0.0445,"open_change":39.5,"close_change":34.56}]
