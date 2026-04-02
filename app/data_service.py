@@ -113,6 +113,15 @@ class CoinGlassClient:
             "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 2,
         })
 
+    # ── Long/Short Ratio (fallback — Binance BTCUSDT) ──────────────
+    # Response: [{"time":...,"global_account_long_percent":73.88,
+    #   "global_account_short_percent":26.12,"global_account_long_short_ratio":2.83}]
+
+    async def get_long_short_ratio(self, client, exchange="Binance", symbol="BTCUSDT"):
+        return await self._get(client, "futures/global-long-short-account-ratio/history", {
+            "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 1,
+        })
+
     # ── Funding Rate History (fallback — Binance BTCUSDT) ─────────
     # Response: [{"time":1658880000000,"open":"0.004603","high":"0.009388","low":"-0.005063","close":"0.009229"}]
     # Requires: exchange (default Binance), symbol (default BTCUSDT), interval
@@ -318,12 +327,13 @@ class DataServiceV76:
             self.cg.get_rsi(client),                       # 16
             self.cg.get_oi_history(client),                # 17 ← OI per-exchange fallback (Binance BTCUSDT)
             self.cg.get_liquidation_history(client),       # 18 ← Liquidation per-exchange fallback (Binance BTCUSDT)
+            self.cg.get_long_short_ratio(client),          # 19 ← L/S ratio fallback (Binance BTCUSDT)
             return_exceptions=True,
         )
 
         (futures_mkts, spot_mkts, oi_hist, funding_hist, etf_flows, etf_list,
          opt_info, max_pain, sth, lth, nupl_data, fg, dom, prem, m2,
-         basis, rsi, oi_exchange, liq_hist) = results
+         basis, rsi, oi_exchange, liq_hist, ls_hist) = results
 
         # Parse: futures/coins-markets FIRST (price, OI, funding, liq, L/S)
         self._parse_futures_markets(inputs, futures_mkts)
@@ -335,6 +345,8 @@ class DataServiceV76:
         self._parse_oi_exchange_history(inputs, oi_exchange)
         # Fallback: liquidation/history (Binance BTCUSDT) if coins-markets didn't provide
         self._parse_liquidation_history(inputs, liq_hist)
+        # Fallback: long/short ratio (Binance BTCUSDT) if coins-markets didn't provide
+        self._parse_long_short_history(inputs, ls_hist)
         # Fallback: funding-rate/history if coins-markets didn't provide funding
         self._parse_funding_history(inputs, funding_hist)
         self._parse_etf_flows(inputs, etf_flows)
@@ -467,8 +479,8 @@ class DataServiceV76:
         if curr_oi > 0 and inputs.oi_total == 0:
             inputs.oi_total = curr_oi
             inputs.sources["futures_oi"] = "CoinGlass v4 OI Aggregated History"
-        # 24h change from two candles (always compute if not already set)
-        if len(data) >= 2 and inputs.oi_change_24h_pct == 0:
+        # 24h change from two candles (use if no source set yet)
+        if len(data) >= 2 and "oi_change" not in inputs.sources:
             prev = data[-2] if isinstance(data[-2], dict) else None
             if prev:
                 prev_oi = float(prev.get("c", prev.get("close", 0)))
@@ -493,7 +505,7 @@ class DataServiceV76:
         if curr_oi > 0 and inputs.oi_total == 0:
             inputs.oi_total = curr_oi
             inputs.sources["futures_oi"] = "CoinGlass v4 OI History (Binance BTCUSDT)"
-        if len(data) >= 2 and inputs.oi_change_24h_pct == 0:
+        if len(data) >= 2 and "oi_change" not in inputs.sources:
             prev = data[-2] if isinstance(data[-2], dict) else None
             if prev:
                 prev_oi = float(prev.get("close", prev.get("c", 0)))
@@ -522,6 +534,25 @@ class DataServiceV76:
         if total > 0:
             inputs.liquidation_24h = total
             inputs.sources["liquidation"] = "CoinGlass v4 Liquidation History (Binance BTCUSDT)"
+
+    # ── Parse: Long/Short Ratio History (fallback) ─────────────────
+    # Response: [{"time":...,"global_account_long_short_ratio":2.83,
+    #   "global_account_long_percent":73.88,"global_account_short_percent":26.12}]
+
+    def _parse_long_short_history(self, inputs, data):
+        if inputs.long_short_ratio > 0:
+            return
+        if not data or isinstance(data, Exception):
+            return
+        if not isinstance(data, list) or len(data) == 0:
+            return
+        entry = data[-1] if isinstance(data[-1], dict) else None
+        if not entry:
+            return
+        ratio = float(entry.get("global_account_long_short_ratio", 0))
+        if ratio > 0:
+            inputs.long_short_ratio = round(ratio, 3)
+            inputs.sources["long_short"] = "CoinGlass v4 L/S Ratio (Binance BTCUSDT)"
 
     # ── Parse: STH Realized Price ─────────────────────────────────
     # Live response: [{"timestamp":..., "price":71250, "sth_realized_price":85974}, ...]
