@@ -383,9 +383,12 @@ class DataServiceV76:
 
     def _parse_oi_history(self, inputs, data):
         if not data or isinstance(data, Exception):
+            logger.warning(f"OI history: no data or exception: {data}")
             return
         if not isinstance(data, list) or len(data) == 0:
+            logger.warning(f"OI history: not a list or empty, type={type(data).__name__}")
             return
+        logger.info(f"OI history: got {len(data)} entries, keys={list(data[0].keys()) if data else '?'}")
         curr = data[-1] if isinstance(data[-1], dict) else None
         if not curr:
             return
@@ -397,10 +400,14 @@ class DataServiceV76:
             prev = data[-2] if isinstance(data[-2], dict) else None
             if prev:
                 prev_oi = float(prev.get("close", prev.get("c", 0)))
+                logger.info(f"OI history: prev={prev_oi}, curr={curr_oi}")
                 if prev_oi > 0 and curr_oi > 0:
                     pct_change = (curr_oi - prev_oi) / prev_oi * 100
                     inputs.oi_change_24h_pct = round(pct_change, 2)
                     inputs.sources["oi_change"] = "CoinGlass v4 OI History (Binance BTCUSDT)"
+                    logger.info(f"OI 24h change: {inputs.oi_change_24h_pct}%")
+        else:
+            logger.warning(f"OI history: only {len(data)} entries, need 2+ for change calc")
 
     # ── Parse: Liquidation History (Binance BTCUSDT) ─────────────────
     # Response: [{"time":...,"long_liquidation_usd":"2369935.19562","short_liquidation_usd":"6947459.43674"}]
@@ -426,16 +433,22 @@ class DataServiceV76:
 
     def _parse_long_short_history(self, inputs, data):
         if not data or isinstance(data, Exception):
+            logger.warning(f"L/S ratio: no data or exception: {type(data).__name__}")
             return
         if not isinstance(data, list) or len(data) == 0:
+            logger.warning(f"L/S ratio: not a list or empty, type={type(data).__name__}")
             return
         entry = data[-1] if isinstance(data[-1], dict) else None
         if not entry:
             return
+        logger.info(f"L/S ratio entry keys: {list(entry.keys())}")
         ratio = float(entry.get("global_account_long_short_ratio", 0))
         if ratio > 0:
             inputs.long_short_ratio = round(ratio, 3)
             inputs.sources["long_short"] = "CoinGlass v4 L/S Ratio (Binance BTCUSDT)"
+            logger.info(f"L/S ratio: {inputs.long_short_ratio}")
+        else:
+            logger.warning(f"L/S ratio: field not found or 0. Entry: {entry}")
 
     # ── Parse: STH Realized Price ─────────────────────────────────
     # Response: [{"timestamp":..., "price":71250, "sth_realized_price":85974}, ...]
@@ -760,6 +773,7 @@ class DataServiceV76:
 
     def _parse_premium(self, inputs, prem):
         if not prem or isinstance(prem, Exception):
+            logger.warning(f"Coinbase premium: no data or exception: {type(prem).__name__ if prem else 'None'}")
             return
         entry = None
         if isinstance(prem, list) and len(prem) > 0:
