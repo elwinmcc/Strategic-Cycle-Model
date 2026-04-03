@@ -99,7 +99,8 @@ class CoinGlassClient:
 
     async def get_oi_history(self, client, exchange="Binance", symbol="BTCUSDT"):
         return await self._get(client, "futures/open-interest/history", {
-            "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 3,
+            "exchange": exchange, "symbol": symbol, "interval": "1d",
+            "limit": 3, "unit": "usd",
         })
 
     # ── Long/Short Ratio (Binance BTCUSDT) ─────────────────────────
@@ -794,7 +795,8 @@ class DataServiceV76:
             logger.warning(f"Dominance field not found. Available keys: {list(entry.keys())}")
 
     # ── Parse: Coinbase Premium ────────────────────────────────────
-    # Live response: [{"time":...,"premium":-13.72,"premium_rate":-0.0195}]
+    # Response: [{"time":...,"premium":5.55,"premium_rate":0.0261,"coinbase_price":30772.93}]
+    # premium_rate is decimal (0.0261 = 2.61%), model expects percentage
 
     def _parse_premium(self, inputs, prem):
         if not prem or isinstance(prem, Exception):
@@ -807,16 +809,21 @@ class DataServiceV76:
             entry = prem
         if not isinstance(entry, dict):
             return
-        premium = None
-        for key in ("premium_rate", "premiumRate", "premium", "value"):
-            if key in entry and entry[key] is not None:
-                premium = float(entry[key])
-                break
-        if premium is not None:
-            inputs.coinbase_premium = premium
-            inputs.sources["cb_premium"] = "CoinGlass v4"
+        logger.info(f"Coinbase premium entry keys: {list(entry.keys())}")
+        # Prefer premium_rate (decimal -> percentage)
+        rate = entry.get("premium_rate")
+        if rate is not None:
+            inputs.coinbase_premium = round(float(rate) * 100, 4)
+            inputs.sources["cb_premium"] = "CoinGlass v4 Coinbase Premium"
+            logger.info(f"Coinbase premium: rate={rate}, stored={inputs.coinbase_premium}%")
         else:
-            logger.warning(f"Premium field not found. Available keys: {list(entry.keys())}")
+            # Fallback: use raw premium (USD)
+            premium = entry.get("premium")
+            if premium is not None:
+                inputs.coinbase_premium = float(premium)
+                inputs.sources["cb_premium"] = "CoinGlass v4 Coinbase Premium (USD)"
+            else:
+                logger.warning(f"Premium fields not found. Keys: {list(entry.keys())}")
 
     # ── Parse: Global M2 ──────────────────────────────────────────
     # Live response: [{"timestamp":...,"price":...,"global_m2_yoy_growth":5.56,"global_m2_supply":...}, ...]
