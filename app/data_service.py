@@ -107,7 +107,7 @@ class CoinGlassClient:
             "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 2,
         })
 
-    # ── Long/Short Ratio (fallback — Binance BTCUSDT) ──────────────
+    # ── Long/Short Ratio (Binance BTCUSDT) ─────────────────────────
     # Response: [{"time":...,"global_account_long_percent":73.88,
     #   "global_account_short_percent":26.12,"global_account_long_short_ratio":2.83}]
 
@@ -116,18 +116,16 @@ class CoinGlassClient:
             "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 1,
         })
 
-    # ── Funding Rate History (fallback — Binance BTCUSDT) ─────────
+    # ── Funding Rate History (Binance BTCUSDT) ────────────────────
     # Response: [{"time":1658880000000,"open":"0.004603","high":"0.009388","low":"-0.005063","close":"0.009229"}]
-    # Requires: exchange (default Binance), symbol (default BTCUSDT), interval
 
     async def get_funding_rate_history(self, client, exchange="Binance", symbol="BTCUSDT"):
         return await self._get(client, "futures/funding-rate/history", {
             "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 1,
         })
 
-    # ── Liquidations Per-Exchange (fallback — Binance BTCUSDT) ────
+    # ── Liquidation History (Binance BTCUSDT) ─────────────────────
     # Response: [{"time":...,"long_liquidation_usd":"2369935.19562","short_liquidation_usd":"6947459.43674"}]
-    # Requires: exchange (default Binance), symbol as trading pair (default BTCUSDT)
 
     async def get_liquidation_history(self, client, exchange="Binance", symbol="BTCUSDT"):
         return await self._get(client, "futures/liquidation/history", {
