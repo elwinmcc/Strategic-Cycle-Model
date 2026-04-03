@@ -171,7 +171,7 @@ class CoinGlassClient:
     # Response: [{"time":...,"premium":5.55,"premium_rate":0.0261}]
 
     async def get_coinbase_premium(self, client):
-        return await self._get(client, "coinbase-premium-index", {"limit": 1})
+        return await self._get(client, "coinbase-premium-index", {"interval": "1d", "limit": 1})
 
     # ── Bitcoin Dominance ───────────────────────────────────────────
     # Response: [{"timestamp":...,"price":...,"bitcoin_dominance":94.35,"market_cap":...}]
