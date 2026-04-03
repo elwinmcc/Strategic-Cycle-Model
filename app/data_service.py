@@ -10,6 +10,7 @@ COINGLASS ENDPOINTS:
   futures/liquidation/history (Binance BTCUSDT)      — Liquidation 24h
   futures/global-long-short-account-ratio/history    — Long/Short ratio (Binance BTCUSDT)
   futures/basis/history (Binance BTCUSDT)            — Futures basis
+  option/exchange-oi-history                         — OI change (aggregated)
   option/info                                        — Options OI
   option/max-pain                                    — Max pain + put/call ratio
   etf/bitcoin/flow-history                           — ETF flows
@@ -194,11 +195,14 @@ class CoinGlassClient:
             "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 1,
         })
 
-    # ── RSI ──────────────────────────────────────────────────────────
-    # Response: [{"symbol":"BTC","rsi_24h":55.3,"current_price":84500,...}]
+    # ── Option OI History (aggregated across exchanges) ────────────
+    # Response: [{"time_list":[1691460000000,...],"price_list":[29140.9,...],
+    #   "data_map":{"huobi":[15167.03,...],"gate":[23412.72,...],...}}]
 
-    async def get_rsi(self, client, symbol="BTC"):
-        return await self._get(client, "futures/rsi/list")
+    async def get_option_oi_history(self, client, symbol="BTC"):
+        return await self._get(client, "option/exchange-oi-history", {
+            "symbol": symbol, "unit": "USD",
+        })
 
 
 class FREDClient:
@@ -305,19 +309,20 @@ class DataServiceV76:
             self.cg.get_dominance(client),                 # 15 BTC dominance
             self.cg.get_coinbase_premium(client),          # 16 Coinbase premium
             self.cg.get_global_m2(client),                 # 17 Global M2
-            self.cg.get_rsi(client),                       # 18 RSI
+            self.cg.get_option_oi_history(client),        # 18 Option OI history (for OI change)
             return_exceptions=True,
         )
 
         (spot_btc, spot_eth, oi_hist, funding_hist, liq_hist, ls_hist,
          basis, etf_flows, etf_list, opt_info, max_pain, sth, lth,
-         nupl_data, fg, dom, prem, m2, rsi) = results
+         nupl_data, fg, dom, prem, m2, opt_oi_hist) = results
 
         # Spot prices
         self._parse_spot_price(inputs, spot_btc, "BTC")
         self._parse_spot_price(inputs, spot_eth, "ETH")
         # Derivatives (all Binance BTCUSDT — one source each)
         self._parse_oi_history(inputs, oi_hist)
+        self._parse_option_oi_history(inputs, opt_oi_hist)
         self._parse_funding_history(inputs, funding_hist)
         self._parse_liquidation_history(inputs, liq_hist)
         self._parse_long_short_history(inputs, ls_hist)
@@ -337,7 +342,6 @@ class DataServiceV76:
         self._parse_dominance(inputs, dom)
         self._parse_premium(inputs, prem)
         self._parse_m2(inputs, m2)
-        self._parse_rsi(inputs, rsi)
 
     # ── Parse: Spot Pairs Markets (BTC or ETH price) ─────────────────
     # Response: [{"symbol":"BTC/USDT","exchange_name":"Binance","current_price":87503.55,
@@ -378,17 +382,6 @@ class DataServiceV76:
                 inputs.eth_btc = round(price / inputs.btc_price, 6)
                 inputs.sources["eth_btc"] = "Calculated (ETH/BTC)"
             logger.info(f"Spot ETH: ${inputs.eth_price}, ETH/BTC={inputs.eth_btc}")
-
-    @staticmethod
-    def _find_symbol_in_list(data, symbol):
-        """Find an entry by symbol in a list of dicts."""
-        if isinstance(data, list):
-            for row in data:
-                if isinstance(row, dict) and row.get("symbol", "").upper() == symbol:
-                    return row
-        elif isinstance(data, dict) and data.get("symbol", "").upper() == symbol:
-            return data
-        return None
 
     # ── Parse: OI History (Binance BTCUSDT) ────────────────────────
     # Response: [{"time":...,"open":"2644845344","high":"...","low":"...","close":"2608846475"}, ...]
@@ -599,29 +592,49 @@ class DataServiceV76:
         else:
             logger.warning(f"Basis field not found. Available keys: {list(entry.keys())}")
 
-    # ── Parse: RSI ───────────────────────────────────────────────────
-    # v4 response: [{"symbol":"BTC","rsi_24h":55.3,"current_price":84500,...}, ...]
+    # ── Parse: Option OI History (aggregated — for OI change) ────────
+    # Response: [{"time_list":[ts1,ts2,...],"price_list":[p1,p2,...],
+    #   "data_map":{"huobi":[oi1,oi2,...],"gate":[oi1,oi2,...],...}}]
+    # Sum all exchanges at last two timestamps to compute OI and 24h change.
 
-    def _parse_rsi(self, inputs, data):
+    def _parse_option_oi_history(self, inputs, data):
         if not data or isinstance(data, Exception):
+            logger.warning(f"Option OI history: no data or exception")
             return
-        # Find BTC entry specifically
-        entry = self._find_symbol_in_list(data, "BTC")
-        if entry is None and isinstance(data, dict):
+        entry = None
+        if isinstance(data, list) and len(data) > 0:
+            entry = data[0]
+        elif isinstance(data, dict):
             entry = data
         if not isinstance(entry, dict):
             return
-        # Try known field name variants
-        rsi = None
-        for key in ("rsi_24h", "rsi24H", "rsi", "RSI", "rsi_1d", "rsiValue"):
-            if key in entry and entry[key] is not None:
-                rsi = float(entry[key])
-                break
-        if rsi is not None:
-            inputs.rsi_daily = round(rsi, 1)
-            inputs.sources["rsi"] = "CoinGlass v4 RSI"
-        else:
-            logger.warning(f"RSI field not found. Available keys: {list(entry.keys())}")
+        time_list = entry.get("time_list", [])
+        data_map = entry.get("data_map", {})
+        if not time_list or not data_map:
+            logger.warning(f"Option OI history: missing time_list or data_map")
+            return
+        n = len(time_list)
+        if n < 2:
+            logger.warning(f"Option OI history: only {n} timestamps, need 2+")
+            return
+        # Sum OI across all exchanges at last two timestamps
+        curr_total = 0.0
+        prev_total = 0.0
+        for exchange, oi_list in data_map.items():
+            if not isinstance(oi_list, list) or len(oi_list) < n:
+                continue
+            curr_val = oi_list[-1] if oi_list[-1] is not None else 0
+            prev_val = oi_list[-2] if oi_list[-2] is not None else 0
+            curr_total += float(curr_val)
+            prev_total += float(prev_val)
+        if curr_total > 0 and inputs.oi_total == 0:
+            inputs.oi_total = curr_total
+            inputs.sources["futures_oi"] = "CoinGlass v4 Option OI History"
+        if prev_total > 0 and curr_total > 0 and "oi_change" not in inputs.sources:
+            pct_change = (curr_total - prev_total) / prev_total * 100
+            inputs.oi_change_24h_pct = round(pct_change, 2)
+            inputs.sources["oi_change"] = "CoinGlass v4 Option OI History"
+            logger.info(f"Option OI change: prev={prev_total:.0f}, curr={curr_total:.0f}, change={inputs.oi_change_24h_pct}%")
 
     # ── Parse: ETF Flows ───────────────────────────────────────────
     # Response: [{"timestamp":..., "flow_usd":655300000, "price_usd":69887.4, "etf_flows":[...]}, ...]

@@ -290,7 +290,8 @@ async def debug_raw_api():
         "liquidation": ("futures/liquidation/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 1}),
         "long_short": ("futures/global-long-short-account-ratio/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "4h", "limit": 1}),
         "basis": ("futures/basis/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 1}),
-        "coinbase_premium": ("coinbase-premium-index", {"limit": 1}),
+        "coinbase_premium": ("coinbase-premium-index", {"interval": "1d", "limit": 1}),
+        "option_oi_history": ("option/exchange-oi-history", {"symbol": "BTC", "unit": "USD"}),
         "etf_flows": ("etf/bitcoin/flow-history", {"limit": 2}),
     }
 
