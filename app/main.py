@@ -283,8 +283,8 @@ async def debug_raw_api():
 
     headers = {"accept": "application/json", "CG-API-KEY": COINGLASS_API_KEY}
     endpoints = {
-        "spot_btc": ("spot/pairs-markets", {"exchange": "Binance", "symbol": "BTCUSDT"}),
-        "spot_eth": ("spot/pairs-markets", {"exchange": "Binance", "symbol": "ETHUSDT"}),
+        "spot_btc": ("spot/pairs-markets", {"symbol": "BTC"}),
+        "spot_eth": ("spot/pairs-markets", {"symbol": "ETH"}),
         "oi_history": ("futures/open-interest/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 3}),
         "funding_rate": ("futures/funding-rate/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 1}),
         "liquidation": ("futures/liquidation/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 1}),

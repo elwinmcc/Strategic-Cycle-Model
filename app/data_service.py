@@ -88,14 +88,10 @@ class CoinGlassClient:
     # Endpoint: spot/pairs-markets
 
     async def get_spot_btc(self, client):
-        return await self._get(client, "spot/pairs-markets", {
-            "exchange": "Binance", "symbol": "BTCUSDT",
-        })
+        return await self._get(client, "spot/pairs-markets", {"symbol": "BTC"})
 
     async def get_spot_eth(self, client):
-        return await self._get(client, "spot/pairs-markets", {
-            "exchange": "Binance", "symbol": "ETHUSDT",
-        })
+        return await self._get(client, "spot/pairs-markets", {"symbol": "ETH"})
 
     # ── OI History (Binance BTCUSDT) ────────────────────────────────
     # Response: [{"time":...,"open":"2644845344","high":"...","low":"...","close":"2608846475"}]
@@ -354,7 +350,13 @@ class DataServiceV76:
             return
         entry = None
         if isinstance(data, list) and len(data) > 0:
-            entry = data[0]
+            # Find Binance USDT pair first, else use first entry
+            for row in data:
+                if isinstance(row, dict) and row.get("exchange_name") == "Binance":
+                    entry = row
+                    break
+            if not entry:
+                entry = data[0]
         elif isinstance(data, dict):
             entry = data
         if not isinstance(entry, dict):
