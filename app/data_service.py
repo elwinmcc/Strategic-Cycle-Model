@@ -3,18 +3,17 @@ Data Service for BTC Econometric Model v7.7
 CoinGlass API v4 + FRED API — NO FALLBACKS (one source per data point)
 
 COINGLASS ENDPOINTS:
-  futures/coins-markets                              — BTC price + ETH price + market cap
+  spot/pairs-markets (Binance BTCUSDT)               — BTC spot price
+  spot/pairs-markets (Binance ETHUSDT)               — ETH spot price
   futures/open-interest/history (Binance BTCUSDT)    — OI + OI 24h change
   futures/funding-rate/history (Binance BTCUSDT)     — Funding rate
   futures/liquidation/history (Binance BTCUSDT)      — Liquidation 24h
   futures/global-long-short-account-ratio/history    — Long/Short ratio (Binance BTCUSDT)
   futures/basis/history (Binance BTCUSDT)            — Futures basis
-  futures/rsi/list                                   — RSI
   option/info                                        — Options OI
   option/max-pain                                    — Max pain + put/call ratio
   etf/bitcoin/flow-history                           — ETF flows
   etf/bitcoin/list                                   — ETF cumulative AUM
-  index/bitcoin-sth-realized-price                   — STH realized price
   index/bitcoin-lth-realized-price                   — LTH realized price
   index/bitcoin-net-unrealized-profit-loss            — NUPL
   index/fear-greed-history                           — Fear & Greed
@@ -85,13 +84,18 @@ class CoinGlassClient:
             logger.error(f"CG exception {endpoint}: {e}")
             return None
 
-    # ── Futures Coins Markets (PRIMARY: price + OI + funding + liq + L/S) ──
-    # Response: [{"symbol":"BTC","current_price":84773.6,"avg_funding_rate_by_oi":0.00196,
-    #   "open_interest_usd":55002072334,"liquidation_usd_24h":27519292,
-    #   "long_short_ratio_24h":1.0313,"open_interest_change_percent_24h":4.58,...}]
+    # ── Spot Pairs Markets (BTC + ETH prices) ──────────────────────
+    # Endpoint: spot/pairs-markets
 
-    async def get_futures_coins_markets(self, client):
-        return await self._get(client, "futures/coins-markets", {"per_page": 10, "page": 1})
+    async def get_spot_btc(self, client):
+        return await self._get(client, "spot/pairs-markets", {
+            "exchange": "Binance", "symbol": "BTCUSDT",
+        })
+
+    async def get_spot_eth(self, client):
+        return await self._get(client, "spot/pairs-markets", {
+            "exchange": "Binance", "symbol": "ETHUSDT",
+        })
 
     # ── OI History (Binance BTCUSDT) ────────────────────────────────
     # Response: [{"time":...,"open":"2644845344","high":"...","low":"...","close":"2608846475"}]
@@ -287,33 +291,35 @@ class DataServiceV76:
         logger.info("Fetching CoinGlass v4 data...")
 
         results = await asyncio.gather(
-            self.cg.get_futures_coins_markets(client),    # 0  BTC + ETH price
-            self.cg.get_oi_history(client),               # 1  OI + OI 24h change (Binance BTCUSDT)
-            self.cg.get_funding_rate_history(client),     # 2  Funding rate (Binance BTCUSDT)
-            self.cg.get_liquidation_history(client),      # 3  Liquidation 24h (Binance BTCUSDT)
-            self.cg.get_long_short_ratio(client),         # 4  L/S ratio (Binance BTCUSDT)
-            self.cg.get_futures_basis(client),            # 5  Futures basis (Binance BTCUSDT)
-            self.cg.get_etf_flows(client, 10),            # 6  ETF flows
-            self.cg.get_etf_list(client),                 # 7  ETF cumulative
-            self.cg.get_options_info(client),              # 8  Options OI
-            self.cg.get_options_max_pain(client),          # 9  Max pain + put/call
-            self.cg.get_sth_realized(client),              # 10 STH realized price
-            self.cg.get_lth_realized(client),              # 11 LTH realized price
-            self.cg.get_nupl(client),                      # 12 NUPL
-            self.cg.get_fear_greed(client),                # 13 Fear & Greed
-            self.cg.get_dominance(client),                 # 14 BTC dominance
-            self.cg.get_coinbase_premium(client),          # 15 Coinbase premium
-            self.cg.get_global_m2(client),                 # 16 Global M2
-            self.cg.get_rsi(client),                       # 17 RSI
+            self.cg.get_spot_btc(client),                 # 0  BTC spot price
+            self.cg.get_spot_eth(client),                 # 1  ETH spot price
+            self.cg.get_oi_history(client),               # 2  OI + OI 24h change (Binance BTCUSDT)
+            self.cg.get_funding_rate_history(client),     # 3  Funding rate (Binance BTCUSDT)
+            self.cg.get_liquidation_history(client),      # 4  Liquidation 24h (Binance BTCUSDT)
+            self.cg.get_long_short_ratio(client),         # 5  L/S ratio (Binance BTCUSDT)
+            self.cg.get_futures_basis(client),            # 6  Futures basis (Binance BTCUSDT)
+            self.cg.get_etf_flows(client, 10),            # 7  ETF flows
+            self.cg.get_etf_list(client),                 # 8  ETF cumulative
+            self.cg.get_options_info(client),              # 9  Options OI
+            self.cg.get_options_max_pain(client),          # 10 Max pain + put/call
+            self.cg.get_sth_realized(client),              # 11 STH realized price
+            self.cg.get_lth_realized(client),              # 12 LTH realized price
+            self.cg.get_nupl(client),                      # 13 NUPL
+            self.cg.get_fear_greed(client),                # 14 Fear & Greed
+            self.cg.get_dominance(client),                 # 15 BTC dominance
+            self.cg.get_coinbase_premium(client),          # 16 Coinbase premium
+            self.cg.get_global_m2(client),                 # 17 Global M2
+            self.cg.get_rsi(client),                       # 18 RSI
             return_exceptions=True,
         )
 
-        (futures_mkts, oi_hist, funding_hist, liq_hist, ls_hist,
+        (spot_btc, spot_eth, oi_hist, funding_hist, liq_hist, ls_hist,
          basis, etf_flows, etf_list, opt_info, max_pain, sth, lth,
          nupl_data, fg, dom, prem, m2, rsi) = results
 
-        # BTC + ETH price from futures/coins-markets
-        self._parse_futures_markets(inputs, futures_mkts)
+        # Spot prices
+        self._parse_spot_price(inputs, spot_btc, "BTC")
+        self._parse_spot_price(inputs, spot_eth, "ETH")
         # Derivatives (all Binance BTCUSDT — one source each)
         self._parse_oi_history(inputs, oi_hist)
         self._parse_funding_history(inputs, funding_hist)
@@ -337,55 +343,49 @@ class DataServiceV76:
         self._parse_m2(inputs, m2)
         self._parse_rsi(inputs, rsi)
 
-    # ── Parse: Futures Coins Markets (BTC price + ETH price) ────────
-    # Response: [{"symbol":"BTC","current_price":84773.6,"market_cap_usd":...}, {"symbol":"ETH",...}]
+    # ── Parse: Spot Pairs Markets (BTC or ETH price) ─────────────────
+    # Response: [{"symbol":"BTC/USDT","exchange_name":"Binance","current_price":87503.55,
+    #   "price_change_24h":2735.79,"price_change_percent_24h":3.23,
+    #   "volume_usd_24h":1585522232.603,...}]
 
-    def _parse_futures_markets(self, inputs, data):
+    def _parse_spot_price(self, inputs, data, coin):
         if not data or isinstance(data, Exception):
-            logger.warning(f"Futures markets: no data or exception: {type(data).__name__ if data else 'None'}")
+            logger.warning(f"Spot {coin}: no data or exception")
             return
-        logger.info(f"Futures markets: data type={type(data).__name__}, "
-                     f"preview={str(data)[:300]}")
-        # Find BTC
-        btc = self._find_symbol_in_list(data, "BTC")
-        if btc:
-            price = float(btc.get("current_price", btc.get("price", 0)))
-            if price > 0:
-                inputs.btc_price = round(price, 2)
-                inputs.sources["btc_price"] = "CoinGlass v4 futures/coins-markets"
-                inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
-            mcap = float(btc.get("market_cap_usd", btc.get("marketCap", 0)))
-            if mcap > 0:
-                inputs.btc_market_cap = mcap
-        # Find ETH
-        eth = self._find_symbol_in_list(data, "ETH")
-        if eth:
-            eth_price = float(eth.get("current_price", eth.get("price", 0)))
-            if eth_price > 0:
-                inputs.eth_price = round(eth_price, 2)
-                inputs.sources["eth_price"] = "CoinGlass v4 futures/coins-markets (ETH)"
-                if inputs.btc_price > 0:
-                    inputs.eth_btc = round(eth_price / inputs.btc_price, 6)
-                    inputs.sources["eth_btc"] = "Calculated (ETH/BTC)"
-        logger.info(f"Futures markets: BTC={inputs.btc_price}, ETH={inputs.eth_price}")
+        entry = None
+        if isinstance(data, list) and len(data) > 0:
+            entry = data[0]
+        elif isinstance(data, dict):
+            entry = data
+        if not isinstance(entry, dict):
+            logger.warning(f"Spot {coin}: unexpected data type {type(data).__name__}")
+            return
+        price = float(entry.get("current_price", 0))
+        if price <= 0:
+            logger.warning(f"Spot {coin}: no current_price. Keys: {list(entry.keys())}")
+            return
+        if coin == "BTC":
+            inputs.btc_price = round(price, 2)
+            inputs.sources["btc_price"] = "CoinGlass v4 spot/pairs-markets (Binance)"
+            inputs.drawdown_pct = round((price - inputs.btc_ath) / inputs.btc_ath * 100, 1)
+            logger.info(f"Spot BTC: ${inputs.btc_price}")
+        elif coin == "ETH":
+            inputs.eth_price = round(price, 2)
+            inputs.sources["eth_price"] = "CoinGlass v4 spot/pairs-markets (Binance)"
+            if inputs.btc_price > 0:
+                inputs.eth_btc = round(price / inputs.btc_price, 6)
+                inputs.sources["eth_btc"] = "Calculated (ETH/BTC)"
+            logger.info(f"Spot ETH: ${inputs.eth_price}, ETH/BTC={inputs.eth_btc}")
 
     @staticmethod
     def _find_symbol_in_list(data, symbol):
-        """Find an entry by symbol in a list of dicts.
-        Handles: list of dicts, single dict, or dict with 'list' key."""
-        items = data
-        if isinstance(data, dict):
-            # Some endpoints wrap list in {"list": [...], "total": ...}
-            if "list" in data:
-                items = data["list"]
-            elif data.get("symbol", "").upper() == symbol:
-                return data
-            else:
-                return None
-        if isinstance(items, list):
-            for row in items:
+        """Find an entry by symbol in a list of dicts."""
+        if isinstance(data, list):
+            for row in data:
                 if isinstance(row, dict) and row.get("symbol", "").upper() == symbol:
                     return row
+        elif isinstance(data, dict) and data.get("symbol", "").upper() == symbol:
+            return data
         return None
 
     # ── Parse: OI History (Binance BTCUSDT) ────────────────────────
