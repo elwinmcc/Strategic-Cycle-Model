@@ -342,7 +342,10 @@ class DataServiceV76:
 
     def _parse_futures_markets(self, inputs, data):
         if not data or isinstance(data, Exception):
+            logger.warning(f"Futures markets: no data or exception: {type(data).__name__ if data else 'None'}")
             return
+        logger.info(f"Futures markets: data type={type(data).__name__}, "
+                     f"preview={str(data)[:300]}")
         # Find BTC
         btc = self._find_symbol_in_list(data, "BTC")
         if btc:
@@ -368,14 +371,21 @@ class DataServiceV76:
 
     @staticmethod
     def _find_symbol_in_list(data, symbol):
-        """Find an entry by symbol in a list of dicts."""
-        if isinstance(data, list):
-            for row in data:
+        """Find an entry by symbol in a list of dicts.
+        Handles: list of dicts, single dict, or dict with 'list' key."""
+        items = data
+        if isinstance(data, dict):
+            # Some endpoints wrap list in {"list": [...], "total": ...}
+            if "list" in data:
+                items = data["list"]
+            elif data.get("symbol", "").upper() == symbol:
+                return data
+            else:
+                return None
+        if isinstance(items, list):
+            for row in items:
                 if isinstance(row, dict) and row.get("symbol", "").upper() == symbol:
                     return row
-        elif isinstance(data, dict):
-            if data.get("symbol", "").upper() == symbol:
-                return data
         return None
 
     # ── Parse: OI History (Binance BTCUSDT) ────────────────────────
