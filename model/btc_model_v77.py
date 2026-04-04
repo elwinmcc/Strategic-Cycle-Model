@@ -607,6 +607,8 @@ def run_analysis(inputs: ModelInputs) -> dict:
             "etf_flow_daily": inputs.etf_flow_daily,
             "etf_flow_weekly": inputs.etf_flow_weekly,
             "etf_cumulative": inputs.etf_cumulative,
+            "eth_etf_flow_daily": inputs.eth_etf_flow_daily,
+            "eth_etf_cumulative": inputs.eth_etf_cumulative,
             "funding_rate": inputs.funding_rate,
             "put_call_ratio": inputs.put_call_ratio,
             "options_oi": inputs.options_oi,

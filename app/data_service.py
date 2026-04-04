@@ -139,6 +139,12 @@ class CoinGlassClient:
     async def get_etf_list(self, client):
         return await self._get(client, "etf/bitcoin/list")
 
+    # ── ETH ETF ────────────────────────────────────────────────────
+    # Response: [{"net_assets_usd":..., "change_usd":..., "timestamp":..., "price_usd":...}]
+
+    async def get_eth_etf_history(self, client, limit=5):
+        return await self._get(client, "etf/ethereum/net-assets/history", {"limit": limit})
+
     # ── Options ─────────────────────────────────────────────────────
     # option/info response: [{"exchange_name":"All","open_interest_usd":...,"volume_usd_24h":...}]
     # max-pain response: [{"date":"260322","max_pain_price":"70500","call_open_interest":2325,"put_open_interest":3252}]
@@ -311,12 +317,13 @@ class DataServiceV76:
             self.cg.get_coinbase_premium(client),          # 16 Coinbase premium
             self.cg.get_global_m2(client),                 # 17 Global M2
             self.cg.get_option_oi_history(client),        # 18 Option OI history (for OI change)
+            self.cg.get_eth_etf_history(client),           # 19 ETH ETF net-assets history
             return_exceptions=True,
         )
 
         (spot_btc, spot_eth, oi_hist, funding_hist, liq_hist, ls_hist,
          basis, etf_flows, etf_list, opt_info, max_pain, sth, lth,
-         nupl_data, fg, dom, prem, m2, opt_oi_hist) = results
+         nupl_data, fg, dom, prem, m2, opt_oi_hist, eth_etf) = results
 
         # Spot prices
         self._parse_spot_price(inputs, spot_btc, "BTC")
@@ -331,6 +338,7 @@ class DataServiceV76:
         # Institutional
         self._parse_etf_flows(inputs, etf_flows)
         self._parse_etf_list(inputs, etf_list)
+        self._parse_eth_etf(inputs, eth_etf)
         self._parse_options(inputs, opt_info)
         self._parse_max_pain(inputs, max_pain)
         # On-chain
@@ -692,6 +700,34 @@ class DataServiceV76:
                         total_nav += float(nav)
             if total_nav > 0:
                 inputs.etf_cumulative = total_nav
+
+    # ── Parse: ETH ETF Net-Assets History ─────────────────────────
+    # Response: [{"net_assets_usd":51671409241, "change_usd":655300000, "timestamp":..., "price_usd":1637.8}]
+
+    def _parse_eth_etf(self, inputs, data):
+        if not data or isinstance(data, Exception):
+            return
+        if not isinstance(data, list) or len(data) == 0:
+            return
+        sorted_entries = sorted(
+            [e for e in data if isinstance(e, dict)],
+            key=lambda x: x.get("timestamp", 0),
+            reverse=True,
+        )
+        if not sorted_entries:
+            return
+        latest = sorted_entries[0]
+        # Daily flow from change_usd
+        change = latest.get("change_usd")
+        if change is not None:
+            inputs.eth_etf_flow_daily = float(change)
+            inputs.sources["eth_etf_flows"] = "CoinGlass v4 ETH ETF"
+        # Cumulative from net_assets_usd
+        nav = latest.get("net_assets_usd")
+        if nav is not None and float(nav) > 0:
+            inputs.eth_etf_cumulative = float(nav)
+            inputs.sources["eth_etf_nav"] = "CoinGlass v4 ETH ETF"
+        logger.info(f"ETH ETF: daily=${inputs.eth_etf_flow_daily/1e6:.1f}M, NAV=${inputs.eth_etf_cumulative/1e9:.2f}B")
 
     # ── Parse: Options Info ────────────────────────────────────────
     # Live response: [{"exchange_name":"All","open_interest_usd":42579833237,...}, {"exchange_name":"Deribit",...}]

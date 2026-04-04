@@ -293,6 +293,7 @@ async def debug_raw_api():
         "coinbase_premium": ("coinbase-premium-index", {"interval": "1d", "limit": 1}),
         "option_oi_history": ("option/exchange-oi-history", {"symbol": "BTC", "unit": "USD"}),
         "etf_flows": ("etf/bitcoin/flow-history", {"limit": 2}),
+        "eth_etf": ("etf/ethereum/net-assets/history", {"limit": 2}),
     }
 
     async with httpx.AsyncClient() as client:

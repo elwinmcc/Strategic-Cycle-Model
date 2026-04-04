@@ -469,6 +469,8 @@ function updateMarketData(data) {
     setText('etf-daily', formatFlowM(md.etf_flow_daily || 0));
     setText('etf-weekly', formatFlowM(md.etf_flow_weekly || 0));
     setText('etf-cumulative', formatCompact(md.etf_cumulative || 0));
+    setText('eth-etf-daily', formatFlowM(md.eth_etf_flow_daily || 0));
+    setText('eth-etf-cumulative', formatCompact(md.eth_etf_cumulative || 0));
 
     // Macro
     setText('hy-oas', (md.hy_oas || 0).toFixed(2) + '%');

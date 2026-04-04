@@ -61,6 +61,8 @@ class ModelInputs:
     etf_flow_daily: float = 0.0
     etf_flow_weekly: float = 0.0
     etf_cumulative: float = 0.0
+    eth_etf_flow_daily: float = 0.0
+    eth_etf_cumulative: float = 0.0
 
     # Macro (FRED)
     hy_oas: float = 0.0
@@ -118,6 +120,8 @@ class ModelInputs:
             "etf_flow_daily": self.etf_flow_daily,
             "etf_flow_weekly": self.etf_flow_weekly,
             "etf_cumulative": self.etf_cumulative,
+            "eth_etf_flow_daily": self.eth_etf_flow_daily,
+            "eth_etf_cumulative": self.eth_etf_cumulative,
             "hy_oas": self.hy_oas,
             "yield_curve_2s10s": self.yield_curve_2s10s,
             "initial_claims": self.initial_claims,
