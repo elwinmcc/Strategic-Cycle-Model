@@ -394,18 +394,28 @@ class DataServiceV76:
         if not isinstance(data, list) or len(data) == 0:
             logger.warning(f"OI history: not a list or empty, type={type(data).__name__}")
             return
-        logger.info(f"OI history: got {len(data)} entries, keys={list(data[0].keys()) if data else '?'}")
+        logger.info(f"OI history: got {len(data)} entries, first={data[0]}")
         curr = data[-1] if isinstance(data[-1], dict) else None
         if not curr:
             return
-        curr_oi = float(curr.get("close", curr.get("c", 0)))
+        # Try multiple possible field names for OI value
+        curr_oi = 0
+        for key in ("close", "c", "openInterest", "oi", "open_interest", "h4OI", "value"):
+            if key in curr and curr[key] is not None:
+                curr_oi = float(curr[key])
+                logger.info(f"OI history: found value in field '{key}' = {curr_oi}")
+                break
         if curr_oi > 0:
             inputs.oi_total = curr_oi
             inputs.sources["futures_oi"] = "CoinGlass v4 OI History (Binance BTCUSDT)"
         if len(data) >= 2:
             prev = data[-2] if isinstance(data[-2], dict) else None
             if prev:
-                prev_oi = float(prev.get("close", prev.get("c", 0)))
+                prev_oi = 0
+                for key in ("close", "c", "openInterest", "oi", "open_interest", "h4OI", "value"):
+                    if key in prev and prev[key] is not None:
+                        prev_oi = float(prev[key])
+                        break
                 logger.info(f"OI history: prev={prev_oi}, curr={curr_oi}")
                 if prev_oi > 0 and curr_oi > 0:
                     pct_change = (curr_oi - prev_oi) / prev_oi * 100

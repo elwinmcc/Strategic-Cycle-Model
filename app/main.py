@@ -285,7 +285,7 @@ async def debug_raw_api():
     endpoints = {
         "spot_btc": ("spot/pairs-markets", {"symbol": "BTC"}),
         "spot_eth": ("spot/pairs-markets", {"symbol": "ETH"}),
-        "oi_history": ("futures/open-interest/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 3}),
+        "oi_history": ("futures/open-interest/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 3, "unit": "usd"}),
         "funding_rate": ("futures/funding-rate/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 1}),
         "liquidation": ("futures/liquidation/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "1d", "limit": 1}),
         "long_short": ("futures/global-long-short-account-ratio/history", {"exchange": "Binance", "symbol": "BTCUSDT", "interval": "4h", "limit": 1}),
@@ -301,13 +301,19 @@ async def debug_raw_api():
             try:
                 resp = await client.get(url, headers=headers, params=params, timeout=15)
                 raw = resp.json()
+                data = raw.get("data")
+                # For OI history, show full entries for debugging
+                if name == "oi_history" and isinstance(data, list):
+                    preview = data[:3]  # Show all entries (limit=3)
+                else:
+                    preview = str(data)[:500] if data else ""
                 results[name] = {
                     "status_code": resp.status_code,
                     "response_code": raw.get("code"),
                     "response_msg": raw.get("msg"),
                     "response_success": raw.get("success"),
-                    "data_type": type(raw.get("data")).__name__ if "data" in raw else "missing",
-                    "data_preview": str(raw.get("data", ""))[:500],
+                    "data_type": type(data).__name__ if data is not None else "missing",
+                    "data_preview": preview,
                 }
             except Exception as e:
                 results[name] = {"error": str(e)}
