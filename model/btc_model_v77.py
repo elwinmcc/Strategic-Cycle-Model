@@ -522,6 +522,8 @@ def run_analysis(inputs: ModelInputs) -> dict:
             "tga": inputs.tga,
             "wti_price": inputs.wti_price,
             "global_m2_growth": inputs.global_m2_growth,
+            "oi_total": inputs.oi_total,
+            "oi_change_24h_pct": inputs.oi_change_24h_pct,
         },
         "sources": inputs.sources,
         "warnings": inputs.warnings,

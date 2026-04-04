@@ -202,7 +202,7 @@ class CoinGlassClient:
 
     async def get_option_oi_history(self, client, symbol="BTC"):
         return await self._get(client, "option/exchange-oi-history", {
-            "symbol": symbol, "unit": "USD",
+            "symbol": symbol, "unit": "USD", "range": "7d",
         })
 
 
