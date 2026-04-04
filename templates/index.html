@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BTC Econometric Model v7.7</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -88,6 +89,22 @@
             </div>
             <div class="score-adjustments" id="score-adjustments">
                 <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Composite Score History Chart -->
+        <section class="chart-section">
+            <div class="chart-header">
+                <h2>Score History</h2>
+                <div class="chart-controls">
+                    <button class="btn-chart-clear" onclick="clearScoreHistory()">Clear History</button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="score-history-chart"></canvas>
+            </div>
+            <div class="chart-meta" id="chart-meta">
+                <span id="chart-data-points">-- data points</span>
             </div>
         </section>
 

@@ -47,6 +47,7 @@ function updateDashboard(data) {
     updateHeader(data);
     updateSignal(data);
     updateCompositeScore(data);
+    saveAndRenderScoreHistory(data);
     updateLayers(data);
     updateImpulseEngine(data);
     updateProjectedPhases(data);
@@ -151,7 +152,211 @@ function updateCompositeScore(data) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 12-LAYER SCORING
+// COMPOSITE SCORE HISTORY CHART
+// ═══════════════════════════════════════════════════════════════════
+
+const SCORE_HISTORY_KEY = 'btc_model_score_history';
+const MAX_HISTORY_POINTS = 200;
+let scoreChart = null;
+
+function getScoreHistory() {
+    try {
+        return JSON.parse(localStorage.getItem(SCORE_HISTORY_KEY) || '[]');
+    } catch { return []; }
+}
+
+function saveScoreEntry(data) {
+    const sig = data.signal || {};
+    const md = data.market_data || {};
+    const ts = data.timestamp || new Date().toISOString();
+
+    // Don't save demo/zero entries
+    if (!sig.final_score || sig.final_score === 0) return;
+
+    const history = getScoreHistory();
+
+    // Deduplicate: skip if last entry is within 2 minutes
+    if (history.length > 0) {
+        const lastTime = new Date(history[history.length - 1].time).getTime();
+        const thisTime = new Date(ts).getTime();
+        if (Math.abs(thisTime - lastTime) < 120000) return;
+    }
+
+    history.push({
+        time: ts,
+        score: sig.final_score,
+        base: sig.base_score,
+        signal: sig.signal,
+        price: md.btc_price || 0,
+    });
+
+    // Trim to max points
+    while (history.length > MAX_HISTORY_POINTS) history.shift();
+
+    localStorage.setItem(SCORE_HISTORY_KEY, JSON.stringify(history));
+}
+
+function clearScoreHistory() {
+    localStorage.removeItem(SCORE_HISTORY_KEY);
+    renderScoreChart([]);
+}
+
+function saveAndRenderScoreHistory(data) {
+    saveScoreEntry(data);
+    renderScoreChart(getScoreHistory());
+}
+
+function renderScoreChart(history) {
+    const ctx = document.getElementById('score-history-chart');
+    if (!ctx) return;
+
+    const metaEl = document.getElementById('chart-data-points');
+    if (metaEl) metaEl.textContent = history.length + ' data points';
+
+    const labels = history.map(h => {
+        const d = new Date(h.time);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+               ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    });
+
+    const scores = history.map(h => h.score);
+    const bases = history.map(h => h.base);
+    const prices = history.map(h => h.price);
+
+    // Signal zone backgrounds via annotation-like approach
+    const zoneColors = scores.map(s => {
+        if (s >= 75) return 'rgba(63, 185, 80, 0.9)';   // STRONG_BUY+
+        if (s >= 65) return 'rgba(52, 211, 153, 0.9)';   // BUY
+        if (s >= 55) return 'rgba(210, 153, 34, 0.9)';   // ACCUMULATE
+        if (s >= 45) return 'rgba(245, 158, 11, 0.7)';   // HOLD
+        if (s >= 35) return 'rgba(249, 115, 22, 0.8)';   // REDUCE
+        return 'rgba(248, 81, 73, 0.9)';                  // SELL
+    });
+
+    if (scoreChart) {
+        scoreChart.destroy();
+    }
+
+    scoreChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Final Score',
+                    data: scores,
+                    borderColor: '#58a6ff',
+                    backgroundColor: 'rgba(88, 166, 255, 0.1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: zoneColors,
+                    pointBorderColor: zoneColors,
+                    pointRadius: history.length > 50 ? 2 : 4,
+                    pointHoverRadius: 6,
+                    fill: true,
+                    tension: 0.3,
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'Base Score',
+                    data: bases,
+                    borderColor: 'rgba(139, 148, 158, 0.5)',
+                    borderWidth: 1,
+                    borderDash: [4, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.3,
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'BTC Price',
+                    data: prices,
+                    borderColor: '#f7931a',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.3,
+                    yAxisID: 'y1',
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    labels: { color: '#8b949e', font: { family: "'Inter', sans-serif", size: 11 } },
+                },
+                tooltip: {
+                    backgroundColor: '#1c2128',
+                    titleColor: '#e6edf3',
+                    bodyColor: '#8b949e',
+                    borderColor: '#30363d',
+                    borderWidth: 1,
+                    callbacks: {
+                        afterBody: function(items) {
+                            const idx = items[0].dataIndex;
+                            const h = getScoreHistory()[idx];
+                            return h ? ['Signal: ' + (h.signal || '--')] : [];
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        color: '#6e7681',
+                        font: { size: 10 },
+                        maxRotation: 45,
+                        maxTicksLimit: 12,
+                    },
+                    grid: { color: 'rgba(48, 54, 61, 0.5)' },
+                },
+                y: {
+                    position: 'left',
+                    min: 0,
+                    max: 100,
+                    ticks: {
+                        color: '#8b949e',
+                        font: { size: 11 },
+                        stepSize: 25,
+                        callback: function(v) {
+                            if (v === 25) return '25 SELL';
+                            if (v === 45) return '45 HOLD';
+                            if (v === 65) return '65 BUY';
+                            if (v === 85) return '85 AGG BUY';
+                            return v;
+                        },
+                    },
+                    grid: {
+                        color: function(context) {
+                            const v = context.tick.value;
+                            if (v === 65) return 'rgba(63, 185, 80, 0.3)';
+                            if (v === 45) return 'rgba(210, 153, 34, 0.3)';
+                            if (v === 25) return 'rgba(248, 81, 73, 0.3)';
+                            return 'rgba(48, 54, 61, 0.3)';
+                        },
+                    },
+                },
+                y1: {
+                    position: 'right',
+                    ticks: {
+                        color: '#f7931a',
+                        font: { size: 10 },
+                        callback: function(v) { return '$' + (v/1000).toFixed(0) + 'K'; },
+                    },
+                    grid: { drawOnChartArea: false },
+                },
+            },
+        },
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 14-LAYER SCORING
 // ═══════════════════════════════════════════════════════════════════
 
 const LAYER_LABELS = {
