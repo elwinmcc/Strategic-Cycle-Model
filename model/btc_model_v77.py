@@ -356,23 +356,27 @@ def generate_signal(layers: dict, inp: ModelInputs, cycle: dict) -> dict:
     top_layers = sorted(layers.items(), key=lambda x: x[1]["contribution"], reverse=True)[:3]
     rationale = [f"{name}: {info['score']}/100 ({info['weight']*100:.0f}%)" for name, info in top_layers]
 
-    # -- IMPULSE PROBABILITY --
+    # -- IMPULSE PROBABILITY (10 catalysts per thesis Section VII) --
     months_since_qt = cycle.get("months_since_qt_end", 0)
     catalysts = {
+        "treasury_stealth": True,  # TGA drawdowns active (structural — always aligned in current regime)
+        "bank_deregulation": True,  # SLR/capital reform underway (structural)
+        "rate_cuts_expected": months_since_qt >= 3 and cycle.get("chair_regime") in ("DOVISH", "POLITICAL_DOVE"),
+        "oil_resolved": inp.wti_price < 85 if inp.wti_price > 0 else True,
         "mvrv_value": 1.0 <= inp.mvrv <= 1.5,
         "sentiment_extreme": inp.fear_greed < 20,
         "etf_inflows": inp.etf_flow_weekly > 0,
         "regime_maturing": months_since_qt >= 3,
-        "credit_orderly": inp.hy_oas < 4.0,
-        "oil_resolved": inp.wti_price < 85 if inp.wti_price > 0 else True,
         "chair_dovish": cycle.get("chair_regime") in ("DOVISH", "POLITICAL_DOVE"),
-        "put_call_bearish": inp.put_call_ratio > 1.0,
-        "funding_neutral": abs(inp.funding_rate) < 0.01,
+        "credit_orderly": inp.hy_oas < 4.0 if inp.hy_oas > 0 else True,
     }
     aligned = sum(1 for v in catalysts.values() if v)
 
-    if aligned >= 8:
-        imp = {"1m": 25, "3m": 50, "6m": 75, "12m": 90}
+    if aligned >= 9:
+        imp = {"1m": 30, "3m": 55, "6m": 80, "12m": 90}
+        window = "OPEN"
+    elif aligned >= 8:
+        imp = {"1m": 15, "3m": 35, "6m": 60, "12m": 80}
         window = "OPEN"
     elif aligned >= 6:
         imp = {"1m": 10, "3m": 30, "6m": 55, "12m": 75}
@@ -409,7 +413,7 @@ def generate_signal(layers: dict, inp: ModelInputs, cycle: dict) -> dict:
 # =============================================================================
 
 def generate_cycle_intelligence(inp: ModelInputs, cycle: dict) -> dict:
-    """Data-driven cycle position and projected phases."""
+    """Data-driven cycle position, projected phases, and timing assessment."""
     now = datetime.now()
     months_since_qt = cycle.get("months_since_qt_end", 0)
 
@@ -423,33 +427,123 @@ def generate_cycle_intelligence(inp: ModelInputs, cycle: dict) -> dict:
         "chair_regime": cycle["chair_regime"],
     }
 
-    # Easing mechanism probability table (data-driven where possible)
+    # ── Easing mechanism probability table (6 mechanisms per thesis Section V) ──
+    rate_cut_prob = 80 if inp.anfci < 0 else 55
+    if inp.wti_price > 100:
+        rate_cut_prob = max(30, rate_cut_prob - 25)  # Oil constraint delays cuts
+
     easing = [
         {"mechanism": "Treasury stealth (TGA drawdown, buybacks)",
-         "probability": 85, "impact": "Moderate"},
+         "probability": 90, "impact": "Moderate", "timeline": "Ongoing"},
         {"mechanism": "Bank deregulation (SLR, capital requirements)",
-         "probability": 80, "impact": "Strong"},
-        {"mechanism": "Rate cuts",
-         "probability": 75 if inp.anfci < 0 else 50, "impact": "Strong"},
+         "probability": 85, "impact": "Strong", "timeline": "3-6 months"},
+        {"mechanism": "Rate cuts (Warsh)",
+         "probability": rate_cut_prob, "impact": "Strong", "timeline": "Jun-Sep 2026"},
         {"mechanism": "Regulatory catalysts (BTC reserve, stablecoin bill)",
-         "probability": 55, "impact": "BTC-specific"},
+         "probability": 60, "impact": "BTC-specific", "timeline": "Q3-Q4 2026"},
+        {"mechanism": "Yield curve management",
+         "probability": 40 if inp.yield_curve_2s10s < -0.5 else 25,
+         "impact": "Very strong", "timeline": "If 10Y > 5%"},
         {"mechanism": "Full QE (balance sheet expansion)",
-         "probability": 20 if inp.hy_oas < 5 else 40, "impact": "Very strong"},
+         "probability": 20 if inp.hy_oas < 5 else 40,
+         "impact": "Very strong", "timeline": "Recession only"},
     ]
 
-    # Accelerators / decelerators from current data
+    # ── Projected Cycle Phases (thesis Section 4.2) ──
+    # Dynamic: current phase determined by MVRV, months_since_qt, and business cycle
+    # Price projections anchored to current BTC price and cycle position
+    btc = inp.btc_price if inp.btc_price > 0 else 70000
+    ath = btc / (1 + inp.drawdown_pct / 100) if inp.drawdown_pct < 0 else btc * 1.8
+
+    # Determine which phase we're currently in
+    if months_since_qt < 6 and inp.mvrv < 1.5:
+        current_phase = 1
+    elif months_since_qt < 10 and inp.mvrv < 2.0:
+        current_phase = 2
+    elif months_since_qt < 15 and inp.mvrv < 2.5:
+        current_phase = 3
+    elif inp.mvrv < 3.0:
+        current_phase = 4
+    else:
+        current_phase = 5
+
+    projected_phases = [
+        {
+            "phase": 1,
+            "name": "Accumulation / Post-QT Lag",
+            "timeline": "Dec 2025 - May 2026",
+            "price_range": f"${btc*0.85/1000:.0f}K - ${btc*1.15/1000:.0f}K",
+            "description": "Post-QT base building. Smart money accumulating, retail fear elevated.",
+            "key_signals": "MVRV < 1.5, extreme fear, negative/flat funding, whale accumulation",
+            "status": "ACTIVE" if current_phase == 1 else ("COMPLETED" if current_phase > 1 else "PROJECTED"),
+        },
+        {
+            "phase": 2,
+            "name": "Fed Pivot / First Cut",
+            "timeline": "Jun - Sep 2026",
+            "price_range": f"${btc*1.0/1000:.0f}K - ${btc*1.4/1000:.0f}K",
+            "description": "Warsh first FOMC Jun 16-17. BTC front-runs first cut by 4-6 weeks.",
+            "key_signals": "Rate cut pricing, ETF inflow resumption, MVRV rising toward 1.5",
+            "status": "ACTIVE" if current_phase == 2 else ("COMPLETED" if current_phase > 2 else "PROJECTED"),
+        },
+        {
+            "phase": 3,
+            "name": "Easing Regime / Markup",
+            "timeline": "Sep - Dec 2026",
+            "price_range": f"${btc*1.3/1000:.0f}K - ${btc*1.8/1000:.0f}K",
+            "description": "Multiple cuts, ETF surge, regulatory catalysts converge. 9-12mo post-QT impulse window.",
+            "key_signals": "MVRV 1.5-2.0, sustained positive funding, ETF weekly > $500M",
+            "status": "ACTIVE" if current_phase == 3 else ("COMPLETED" if current_phase > 3 else "PROJECTED"),
+        },
+        {
+            "phase": 4,
+            "name": "Impulse / Potential Peak",
+            "timeline": "Q1 - Q3 2027",
+            "price_range": f"${btc*1.7/1000:.0f}K - ${btc*2.4/1000:.0f}K",
+            "description": "Full easing 12-18mo post-QT. If recession -> possible QE restart.",
+            "key_signals": "MVRV 2.0-3.0, elevated funding, broad market euphoria",
+            "status": "ACTIVE" if current_phase == 4 else ("COMPLETED" if current_phase > 4 else "PROJECTED"),
+        },
+        {
+            "phase": 5,
+            "name": "Distribution / Cycle Transition",
+            "timeline": "Q3 2027 - Q1 2028",
+            "price_range": "Monitor for exits",
+            "description": "MVRV > 3.0, sustained F&G > 80, funding > 0.05%, ETF outflows > $1B/week.",
+            "key_signals": "Model shifts BUY -> REDUCE -> SELL as thresholds crossed",
+            "status": "ACTIVE" if current_phase == 5 else "PROJECTED",
+        },
+    ]
+
+    # ── Accelerators / decelerators from current data ──
     accelerators = []
     decelerators = []
 
     if inp.wti_price > 0 and inp.wti_price < 70:
         accelerators.append(f"Oil ${inp.wti_price:.0f} — deflationary tailwind")
-    elif inp.wti_price > 100:
-        decelerators.append(f"Oil ${inp.wti_price:.0f} — inflation headwind")
+    elif inp.wti_price > 0 and inp.wti_price < 85:
+        accelerators.append(f"Oil ${inp.wti_price:.0f} — within Fed comfort zone")
+    if inp.wti_price > 100:
+        decelerators.append(f"Oil ${inp.wti_price:.0f} — inflation headwind, delays cuts")
 
     if inp.fear_greed < 15:
         accelerators.append(f"F&G {inp.fear_greed} — maximum contrarian signal")
+    elif inp.fear_greed < 25:
+        accelerators.append(f"F&G {inp.fear_greed} — elevated fear, contrarian bullish")
+
     if inp.funding_rate < -0.001:
-        accelerators.append(f"Funding {inp.funding_rate*100:.3f}% — shorts paying")
+        accelerators.append(f"Funding {inp.funding_rate*100:.3f}% — shorts paying (deleveraged)")
+    elif abs(inp.funding_rate) < 0.005:
+        accelerators.append("Neutral funding — healthy market structure")
+
+    if inp.mvrv > 0 and inp.mvrv < 1.5:
+        accelerators.append(f"MVRV {inp.mvrv:.2f} — deep value zone")
+
+    if inp.etf_flow_weekly > 200:
+        accelerators.append(f"ETF weekly +${inp.etf_flow_weekly:.0f}M — strong institutional demand")
+
+    if months_since_qt >= 3:
+        accelerators.append(f"{months_since_qt:.0f} months post-QT — approaching historical impulse window")
 
     if inp.anfci > 0:
         decelerators.append(f"ANFCI {inp.anfci:.2f} — tightening financial conditions")
@@ -460,9 +554,17 @@ def generate_cycle_intelligence(inp: ModelInputs, cycle: dict) -> dict:
     if inp.hy_oas > 4.5:
         decelerators.append(f"HY OAS {inp.hy_oas:.1f}% — credit stress")
 
+    if inp.fear_greed > 80:
+        decelerators.append(f"F&G {inp.fear_greed} — euphoria zone, distribution risk")
+
+    if inp.funding_rate > 0.05:
+        decelerators.append(f"Funding {inp.funding_rate*100:.3f}% — excessive leverage")
+
     return {
         "position": position,
         "easing_mechanisms": easing,
+        "projected_phases": projected_phases,
+        "current_phase": current_phase,
         "accelerators": accelerators,
         "decelerators": decelerators,
     }

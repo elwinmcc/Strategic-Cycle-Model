@@ -48,6 +48,8 @@ function updateDashboard(data) {
     updateSignal(data);
     updateCompositeScore(data);
     updateLayers(data);
+    updateImpulseEngine(data);
+    updateProjectedPhases(data);
     updateCycleIntelligence(data);
     updateMarketData(data);
     updateAudit(data);
@@ -227,6 +229,131 @@ function getScoreColor(score) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// IMPULSE PROBABILITY ENGINE
+// ═══════════════════════════════════════════════════════════════════
+
+const CATALYST_LABELS = {
+    treasury_stealth: 'Treasury Stealth Easing',
+    bank_deregulation: 'Bank Deregulation',
+    rate_cuts_expected: 'Rate Cuts Expected <6mo',
+    oil_resolved: 'Oil Resolved (<$85 WTI)',
+    mvrv_value: 'MVRV Value Zone (1.0-1.5)',
+    sentiment_extreme: 'Extreme Fear (F&G <20)',
+    etf_inflows: 'ETF Net Inflows',
+    regime_maturing: 'Regime Maturing (>3mo)',
+    chair_dovish: 'Chair Dovish Bias',
+    credit_orderly: 'Credit Orderly (HY OAS <4%)',
+};
+
+function updateImpulseEngine(data) {
+    const sig = data.signal || {};
+    const el = document.getElementById('impulse-engine');
+    if (!el) return;
+
+    const imp = sig.impulse_probability || {};
+    const catalysts = sig.catalysts_detail || {};
+    const aligned = sig.catalysts_aligned || 0;
+    const total = sig.catalysts_total || 10;
+    const window = sig.impulse_window || 'NOT_OPEN';
+
+    let html = '';
+
+    // Window status banner
+    html += `<div class="impulse-banner ${window.toLowerCase().replace('_','-')}">`;
+    html += `<div class="impulse-window-label">Impulse Window: <strong>${window.replace(/_/g, ' ')}</strong></div>`;
+    html += `<div class="impulse-aligned">${aligned}/${total} Catalysts Aligned</div>`;
+    html += '</div>';
+
+    // Probability timeline
+    html += '<div class="impulse-probabilities">';
+    html += '<h4>Impulse Probability Timeline</h4>';
+    html += '<div class="prob-grid">';
+    const periods = [
+        { key: '1m', label: '1 Month' },
+        { key: '3m', label: '3 Months' },
+        { key: '6m', label: '6 Months' },
+        { key: '12m', label: '12 Months' },
+    ];
+    for (const p of periods) {
+        const pct = imp[p.key] || 0;
+        const barColor = pct >= 60 ? '#3fb950' : pct >= 30 ? '#d29922' : '#8b949e';
+        html += `<div class="prob-item">`;
+        html += `<div class="prob-label">${p.label}</div>`;
+        html += `<div class="prob-bar-track"><div class="prob-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>`;
+        html += `<div class="prob-value">${pct}%</div>`;
+        html += `</div>`;
+    }
+    html += '</div></div>';
+
+    // Catalyst grid
+    html += '<div class="catalyst-grid">';
+    html += '<h4>Catalyst Status</h4>';
+    html += '<div class="catalyst-items">';
+    for (const [key, value] of Object.entries(catalysts)) {
+        const label = CATALYST_LABELS[key] || key.replace(/_/g, ' ');
+        const status = value ? 'aligned' : 'not-aligned';
+        const icon = value ? '&#10003;' : '&#10007;';
+        html += `<div class="catalyst-item ${status}">`;
+        html += `<span class="catalyst-icon">${icon}</span>`;
+        html += `<span class="catalyst-name">${label}</span>`;
+        html += '</div>';
+    }
+    html += '</div></div>';
+
+    el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PROJECTED CYCLE PHASES
+// ═══════════════════════════════════════════════════════════════════
+
+function updateProjectedPhases(data) {
+    const intel = data.intelligence || {};
+    const el = document.getElementById('projected-phases');
+    if (!el) return;
+
+    const phases = intel.projected_phases || [];
+    const currentPhase = intel.current_phase || 1;
+
+    if (phases.length === 0) {
+        el.innerHTML = '<p class="no-data">Projection data not available</p>';
+        return;
+    }
+
+    let html = '';
+
+    // Phase timeline
+    html += '<div class="phase-timeline">';
+    for (const p of phases) {
+        const statusClass = p.status === 'ACTIVE' ? 'active' : p.status === 'COMPLETED' ? 'completed' : 'projected';
+        html += `<div class="phase-card ${statusClass}">`;
+        html += `<div class="phase-header">`;
+        html += `<span class="phase-number">Phase ${p.phase}</span>`;
+        html += `<span class="phase-status-badge ${statusClass}">${p.status}</span>`;
+        html += `</div>`;
+        html += `<div class="phase-name">${p.name}</div>`;
+        html += `<div class="phase-timeline-range">${p.timeline}</div>`;
+        html += `<div class="phase-price">${p.price_range}</div>`;
+        html += `<div class="phase-desc">${p.description}</div>`;
+        html += `<div class="phase-signals">${p.key_signals}</div>`;
+        html += `</div>`;
+    }
+    html += '</div>';
+
+    // Current phase indicator
+    const active = phases.find(p => p.status === 'ACTIVE');
+    if (active) {
+        html += `<div class="current-phase-summary">`;
+        html += `<span class="current-label">Current Position:</span> `;
+        html += `<strong>Phase ${active.phase} — ${active.name}</strong>`;
+        html += `<span class="current-timeline">${active.timeline}</span>`;
+        html += `</div>`;
+    }
+
+    el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // CYCLE INTELLIGENCE (v7.7)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -250,18 +377,22 @@ function updateCycleIntelligence(data) {
     }
     html += '</div>';
 
-    // Easing mechanisms
+    // Easing mechanisms (6 per thesis Section V)
     const easing = intel.easing_mechanisms || [];
     if (easing.length > 0) {
-        html += '<div class="easing-table"><h4>Easing Mechanisms</h4>';
+        html += '<div class="easing-table"><h4>Easing Spectrum (Probability / Impact / Timeline)</h4>';
         for (const em of easing) {
             const pct = em.probability || 0;
             const barW = Math.min(100, pct);
+            const barColor = pct >= 80 ? '#3fb950' : pct >= 50 ? '#d29922' : '#8b949e';
             html += `<div class="easing-row">`;
-            html += `<div class="easing-bar" style="width:${barW}%"></div>`;
+            html += `<div class="easing-bar" style="width:${barW}%;background:${barColor}"></div>`;
             html += `<span class="easing-pct">${pct}%</span>`;
             html += `<span class="easing-name">${em.mechanism}</span>`;
             html += `<span class="easing-impact">${em.impact || ''}</span>`;
+            if (em.timeline) {
+                html += `<span class="easing-timeline">${em.timeline}</span>`;
+            }
             html += `</div>`;
         }
         html += '</div>';
