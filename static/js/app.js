@@ -46,13 +46,19 @@ async function refreshData() {
 function updateDashboard(data) {
     updateHeader(data);
     updateSignal(data);
+    updatePositionTriplet(data);
+    updateImpulseHeadline(data);
+    updateCycleTimeline(data);
     updateCompositeScore(data);
     saveAndRenderScoreHistory(data);
-    updateLayers(data);
+    updateEasingTracker(data);
     updateImpulseEngine(data);
-    updateProjectedPhases(data);
-    updateCycleIntelligence(data);
+    updateLayersGrouped(data);
     updateMarketData(data);
+    updateRotation(data);
+    updateSynopsis(data);
+    updateHistoricalAnalog(data);
+    updateCycleIntelligence(data);
     updateAudit(data);
     updateFooter(data);
 }
@@ -101,15 +107,418 @@ function updateSignal(data) {
     const rationale = sig.rationale || [];
     document.getElementById('signal-rationale').textContent =
         Array.isArray(rationale) ? rationale.join(' | ') : rationale;
+}
 
-    // Impulse probability (v7.7)
-    const impEl = document.getElementById('impulse-info');
-    if (impEl && sig.impulse_window) {
-        const imp = sig.impulse_probability || {};
-        impEl.innerHTML = `<span class="impulse-window ${sig.impulse_window.toLowerCase()}">${sig.impulse_window.replace('_',' ')}</span>` +
-            ` <span class="impulse-catalysts">${sig.catalysts_aligned || 0}/${sig.catalysts_total || 0} catalysts</span>` +
-            ` <span class="impulse-prob">6mo: ${imp['6m'] || '--'}%</span>`;
+// ═══════════════════════════════════════════════════════════════════
+// CYCLE POSITION TRIPLET (headline block)
+// ═══════════════════════════════════════════════════════════════════
+
+function updatePositionTriplet(data) {
+    const cycle = data.cycle || {};
+    const intel = data.intelligence || {};
+    const pos = intel.position || cycle;
+    const el = document.getElementById('position-triplet');
+    if (!el) return;
+
+    const months = pos.months_since_qt_end || 0;
+    const regime = (pos.liquidity_regime || '--').replace(/_/g, ' ');
+    const biz = (pos.business_cycle || pos.business_phase || '--').replace(/_/g, ' ');
+    const btcPh = (pos.btc_cycle || pos.btc_phase || '--').replace(/_/g, ' ');
+
+    const cards = [
+        {
+            label: 'Liquidity Regime',
+            value: regime,
+            sub: `${months.toFixed(0)} months post-QT`,
+            icon: 'L',
+        },
+        {
+            label: 'Business Cycle',
+            value: biz,
+            sub: `ANFCI ${(data.market_data?.anfci || 0).toFixed(2)}`,
+            icon: 'B',
+        },
+        {
+            label: 'BTC Cycle',
+            value: btcPh,
+            sub: `MVRV ${(data.market_data?.mvrv || 0).toFixed(2)}`,
+            icon: 'C',
+        },
+    ];
+
+    let html = '';
+    for (const c of cards) {
+        html += `<div class="triplet-card">`;
+        html += `<div class="triplet-label">${c.label}</div>`;
+        html += `<div class="triplet-value">${c.value}</div>`;
+        html += `<div class="triplet-sub">${c.sub}</div>`;
+        html += `</div>`;
     }
+    el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// IMPULSE HEADLINE (headline block)
+// ═══════════════════════════════════════════════════════════════════
+
+function updateImpulseHeadline(data) {
+    const sig = data.signal || {};
+    const el = document.getElementById('impulse-headline');
+    if (!el) return;
+
+    const imp = sig.impulse_probability || {};
+    const aligned = sig.catalysts_aligned || 0;
+    const total = sig.catalysts_total || 10;
+    const window = sig.impulse_window || 'NOT_OPEN';
+    const alignPct = total > 0 ? (aligned / total) * 100 : 0;
+
+    let html = `<div class="impulse-headline-inner ${window.toLowerCase().replace('_','-')}">`;
+    html += `<div class="impulse-headline-top">`;
+    html += `<div class="impulse-title">Impulse Window</div>`;
+    html += `<div class="impulse-status">${window.replace(/_/g, ' ')}</div>`;
+    html += `</div>`;
+
+    // Catalyst alignment progress bar
+    html += `<div class="impulse-align-row">`;
+    html += `<span class="impulse-align-label">${aligned}/${total} catalysts aligned</span>`;
+    html += `<div class="impulse-align-track"><div class="impulse-align-fill" style="width:${alignPct}%"></div></div>`;
+    html += `</div>`;
+
+    // Probability strip
+    html += `<div class="impulse-prob-strip">`;
+    const periods = [
+        { key: '1m', label: '1mo' },
+        { key: '3m', label: '3mo' },
+        { key: '6m', label: '6mo' },
+        { key: '12m', label: '12mo' },
+    ];
+    for (const p of periods) {
+        const pct = imp[p.key] || 0;
+        html += `<div class="impulse-prob-item"><div class="impulse-prob-pct">${pct}%</div><div class="impulse-prob-label">${p.label}</div></div>`;
+    }
+    html += `</div></div>`;
+
+    el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CYCLE TIMELINE (THE DIFFERENTIATOR)
+// ═══════════════════════════════════════════════════════════════════
+
+function updateCycleTimeline(data) {
+    const intel = data.intelligence || {};
+    const phases = intel.projected_phases || [];
+    const events = intel.key_events || [];
+    const el = document.getElementById('cycle-timeline');
+    if (!el || phases.length === 0) return;
+
+    const currentPhase = intel.current_phase || 1;
+
+    let html = '';
+
+    // Horizontal timeline bar
+    html += '<div class="timeline-bar">';
+    const phaseCount = phases.length;
+    for (let i = 0; i < phaseCount; i++) {
+        const p = phases[i];
+        const statusClass = p.status === 'ACTIVE' ? 'active' : p.status === 'COMPLETED' ? 'completed' : 'projected';
+        const isYouHere = p.status === 'ACTIVE';
+        html += `<div class="timeline-segment ${statusClass}" style="flex:1" data-phase="${p.phase}" onclick="togglePhaseDetail(${p.phase})">`;
+        if (isYouHere) {
+            html += `<div class="you-are-here"><div class="you-marker">&#9660;</div><div class="you-label">YOU ARE HERE</div></div>`;
+        }
+        html += `<div class="timeline-segment-inner">`;
+        html += `<div class="timeline-phase-num">Phase ${p.phase}</div>`;
+        html += `<div class="timeline-phase-name">${p.name}</div>`;
+        html += `<div class="timeline-phase-range">${p.timeline}</div>`;
+        html += `<div class="timeline-phase-price">${p.price_range}</div>`;
+        html += `</div>`;
+        html += `</div>`;
+    }
+    html += '</div>';
+
+    // Key events annotations
+    if (events.length > 0) {
+        html += '<div class="timeline-events">';
+        html += '<div class="timeline-events-title">Calendar Checkpoints</div>';
+        html += '<div class="timeline-events-list">';
+        for (const ev of events) {
+            const d = new Date(ev.date);
+            const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const passed = d < new Date();
+            html += `<div class="timeline-event ${passed ? 'passed' : 'future'} ${ev.category}">`;
+            html += `<span class="event-date">${dateStr}</span>`;
+            html += `<span class="event-label">${ev.label}</span>`;
+            html += `</div>`;
+        }
+        html += '</div></div>';
+    }
+
+    // Expanded details for active phase
+    const active = phases.find(p => p.status === 'ACTIVE');
+    if (active) {
+        html += `<div class="timeline-detail" id="timeline-detail">`;
+        html += `<div class="detail-header"><strong>Phase ${active.phase}: ${active.name}</strong> <span class="detail-range">${active.timeline}</span></div>`;
+        html += `<div class="detail-desc">${active.description}</div>`;
+        html += `<div class="detail-signals"><strong>Key signals:</strong> ${active.key_signals}</div>`;
+        html += `<div class="detail-price"><strong>BTC price range:</strong> ${active.price_range}</div>`;
+        html += `</div>`;
+    }
+
+    el.innerHTML = html;
+}
+
+function togglePhaseDetail(phase) {
+    const data = lastAnalysis;
+    if (!data) return;
+    const phases = (data.intelligence || {}).projected_phases || [];
+    const p = phases.find(x => x.phase === phase);
+    if (!p) return;
+    const detail = document.getElementById('timeline-detail');
+    if (!detail) return;
+    detail.innerHTML =
+        `<div class="detail-header"><strong>Phase ${p.phase}: ${p.name}</strong> <span class="detail-range">${p.timeline}</span> <span class="detail-status-${p.status.toLowerCase()}">${p.status}</span></div>` +
+        `<div class="detail-desc">${p.description}</div>` +
+        `<div class="detail-signals"><strong>Key signals:</strong> ${p.key_signals}</div>` +
+        `<div class="detail-price"><strong>BTC price range:</strong> ${p.price_range}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EASING MECHANISM TRACKER
+// ═══════════════════════════════════════════════════════════════════
+
+function updateEasingTracker(data) {
+    const intel = data.intelligence || {};
+    const easing = intel.easing_mechanisms || [];
+    const el = document.getElementById('easing-tracker');
+    if (!el) return;
+
+    let html = '<div class="easing-tracker-list">';
+    html += '<div class="easing-tracker-header"><span>Mechanism</span><span>Probability</span><span>Status</span><span>Impact</span><span>Timeline</span></div>';
+    for (const em of easing) {
+        const pct = em.probability || 0;
+        const statusClass = (em.status || 'unknown').toLowerCase();
+        const barColor = pct >= 80 ? 'rgba(63, 185, 80, 0.4)' : pct >= 50 ? 'rgba(210, 153, 34, 0.4)' : 'rgba(139, 148, 158, 0.3)';
+        html += `<div class="easing-tracker-row">`;
+        html += `<span class="et-name">${em.mechanism}</span>`;
+        html += `<div class="et-prob">`;
+        html += `<div class="et-bar" style="width:${pct}%;background:${barColor}"></div>`;
+        html += `<span class="et-pct">${pct}%</span>`;
+        html += `</div>`;
+        html += `<span class="et-status status-${statusClass}">${em.status || '--'}</span>`;
+        html += `<span class="et-impact">${em.impact || ''}</span>`;
+        html += `<span class="et-timeline">${em.timeline || ''}</span>`;
+        html += `</div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SYNOPSIS BLOCK
+// ═══════════════════════════════════════════════════════════════════
+
+function updateSynopsis(data) {
+    const syn = data.synopsis || {};
+    const el = document.getElementById('synopsis-block');
+    if (!el) return;
+
+    let html = '';
+
+    if (syn.todays_catalyst) {
+        html += '<div class="synopsis-item">';
+        html += '<h3 class="synopsis-title">Today\'s Catalyst</h3>';
+        html += `<p class="synopsis-text">${syn.todays_catalyst}</p>`;
+        html += '</div>';
+    }
+
+    if (syn.structural_picture) {
+        html += '<div class="synopsis-item">';
+        html += '<h3 class="synopsis-title">Structural Picture</h3>';
+        html += `<p class="synopsis-text">${syn.structural_picture}</p>`;
+        html += '</div>';
+    }
+
+    const risks = syn.risks_remaining || [];
+    if (risks.length > 0) {
+        html += '<div class="synopsis-item">';
+        html += '<h3 class="synopsis-title">Risks Remaining</h3>';
+        html += '<ul class="synopsis-risks">';
+        for (const r of risks) {
+            html += `<li>${r}</li>`;
+        }
+        html += '</ul></div>';
+    }
+
+    el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HISTORICAL ANALOG
+// ═══════════════════════════════════════════════════════════════════
+
+function updateHistoricalAnalog(data) {
+    const analog = data.historical_analog || {};
+    const el = document.getElementById('historical-analog');
+    if (!el) return;
+
+    const metrics = analog.metrics || [];
+    const overall = analog.overall_match || 0;
+    const matchClass = overall >= 80 ? 'high' : overall >= 60 ? 'medium' : 'low';
+
+    let html = '';
+
+    html += `<div class="analog-header">`;
+    html += `<div class="analog-period">${analog.analog_period || 'Historical Analog'}</div>`;
+    html += `<div class="analog-match ${matchClass}">Overall Match: <strong>${overall}%</strong></div>`;
+    html += `</div>`;
+
+    // Comparison table
+    html += '<div class="analog-table">';
+    html += '<div class="analog-row analog-head"><span>Metric</span><span>Q4 2019</span><span>Current</span><span>Match</span></div>';
+    for (const m of metrics) {
+        const matchC = m.match >= 80 ? 'high' : m.match >= 60 ? 'medium' : 'low';
+        html += `<div class="analog-row">`;
+        html += `<span class="analog-metric">${m.name}</span>`;
+        html += `<span class="analog-past">${m.q4_2019}</span>`;
+        html += `<span class="analog-curr">${m.current}</span>`;
+        html += `<span class="analog-mpct match-${matchC}">${m.match}%</span>`;
+        html += `</div>`;
+    }
+    html += '</div>';
+
+    // What happened next
+    const happened = analog.what_happened_next || [];
+    if (happened.length > 0) {
+        html += '<div class="analog-next">';
+        html += '<h4>What Happened Next in the Analog Period</h4>';
+        html += '<ul>';
+        for (const h of happened) {
+            html += `<li>${h}</li>`;
+        }
+        html += '</ul></div>';
+    }
+
+    if (analog.lesson) {
+        html += `<div class="analog-lesson">${analog.lesson}</div>`;
+    }
+
+    el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ROTATION ANALYSIS
+// ═══════════════════════════════════════════════════════════════════
+
+function updateRotation(data) {
+    const rot = data.rotation || {};
+    const el = document.getElementById('rotation-analysis');
+    if (!el) return;
+
+    const conditions = rot.conditions || [];
+    const allocation = rot.suggested_allocation || { BTC: 40, ETH: 30, ALT: 30 };
+
+    let html = '';
+
+    // Signal banner
+    html += `<div class="rotation-banner rotation-${rot.signal_class || 'not-yet'}">`;
+    html += `<div class="rotation-signal">${rot.signal || 'NOT YET'}</div>`;
+    html += `<div class="rotation-met">${rot.conditions_met || 0}/${rot.conditions_total || 3} conditions met</div>`;
+    html += `</div>`;
+
+    // Conditions checklist
+    html += '<div class="rotation-conditions">';
+    html += '<h4>Rotation Conditions</h4>';
+    for (const c of conditions) {
+        const icon = c.met ? '&#10003;' : '&#10007;';
+        const cls = c.met ? 'met' : 'not-met';
+        html += `<div class="rotation-cond ${cls}">`;
+        html += `<span class="rot-icon">${icon}</span>`;
+        html += `<span class="rot-name">${c.name}</span>`;
+        html += `<span class="rot-current">Current: <strong>${c.current}</strong></span>`;
+        html += `</div>`;
+    }
+    html += '</div>';
+
+    // Allocation suggestion
+    html += '<div class="rotation-allocation">';
+    html += '<h4>Suggested Allocation</h4>';
+    html += '<div class="alloc-bars">';
+    for (const [asset, pct] of Object.entries(allocation)) {
+        const color = asset === 'BTC' ? '#f7931a' : asset === 'ETH' ? '#627eea' : '#a371f7';
+        html += `<div class="alloc-item">`;
+        html += `<div class="alloc-asset">${asset}</div>`;
+        html += `<div class="alloc-bar-track"><div class="alloc-bar-fill" style="width:${pct}%;background:${color}"></div></div>`;
+        html += `<div class="alloc-pct">${pct}%</div>`;
+        html += `</div>`;
+    }
+    html += '</div></div>';
+
+    el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LAYERS GROUPED BY CATEGORY
+// ═══════════════════════════════════════════════════════════════════
+
+const LAYER_GROUPS = [
+    { name: 'Demand', layers: ['institutional_flow', 'institutional_struct'], weight_label: '25%' },
+    { name: 'Risk', layers: ['leverage_fragility', 'derivatives', 'credit'], weight_label: '28%' },
+    { name: 'Valuation', layers: ['mvrv', 'support'], weight_label: '14%' },
+    { name: 'Macro', layers: ['liquidity_regime', 'cycle_phase', 'fed_transition', 'global_liquidity', 'oil_energy'], weight_label: '26%' },
+    { name: 'Sentiment', layers: ['options_sentiment', 'sentiment'], weight_label: '7%' },
+];
+
+function updateLayersGrouped(data) {
+    const layers = data.layers || {};
+    const el = document.getElementById('layers-grouped');
+    if (!el) return;
+
+    let html = '';
+    for (const group of LAYER_GROUPS) {
+        // Calculate actual group weight
+        let groupWeight = 0;
+        let groupContribution = 0;
+        for (const name of group.layers) {
+            if (layers[name]) {
+                groupWeight += (layers[name].weight || 0) * 100;
+                groupContribution += layers[name].contribution || 0;
+            }
+        }
+
+        html += `<div class="layer-group">`;
+        html += `<div class="layer-group-header">`;
+        html += `<h3 class="layer-group-name">${group.name}</h3>`;
+        html += `<div class="layer-group-meta">${groupWeight.toFixed(0)}% weight · ${groupContribution.toFixed(1)} contribution</div>`;
+        html += `</div>`;
+        html += `<div class="layer-group-cards">`;
+
+        for (const name of group.layers) {
+            const layer = layers[name];
+            if (!layer) continue;
+            const score = layer.score || 0;
+            const weight = ((layer.weight || 0) * 100).toFixed(0);
+            const contribution = (layer.contribution || 0).toFixed(2);
+            const barColor = getScoreColor(score);
+            const label = LAYER_LABELS[name] || name;
+
+            html += `<div class="layer-card">`;
+            html += `<div class="layer-header">`;
+            html += `<span class="layer-name">${label}</span>`;
+            html += `<span class="layer-weight">${weight}%</span>`;
+            html += `</div>`;
+            html += `<div class="layer-bar-row">`;
+            html += `<div class="layer-bar"><div class="layer-bar-fill" style="width:${score}%;background:${barColor};"></div></div>`;
+            html += `<span class="layer-score">${score}</span>`;
+            html += `</div>`;
+            html += `<div class="layer-contribution">Contribution: ${contribution}</div>`;
+            html += `<div class="layer-reasoning">${layer.reasoning || ''}</div>`;
+            html += `</div>`;
+        }
+
+        html += `</div></div>`;
+    }
+    el.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════════════

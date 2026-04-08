@@ -30,6 +30,10 @@
             </div>
         </header>
 
+        <!-- ══════════════════════════════════════════════════════════
+             SECTION 1: THE HEADLINE BLOCK (Above the Fold)
+             ══════════════════════════════════════════════════════════ -->
+
         <!-- Signal Banner -->
         <section class="signal-card" id="signal-card">
             <div class="signal-header">
@@ -61,10 +65,31 @@
             <div class="signal-rationale" id="signal-rationale">
                 Loading analysis...
             </div>
-            <div class="impulse-info" id="impulse-info">
-                <!-- Populated by JS: impulse window + catalysts -->
+        </section>
+
+        <!-- Cycle Position Triplet + Impulse Window -->
+        <section class="headline-block">
+            <div class="position-triplet" id="position-triplet">
+                <!-- 3 cycle position cards populated by JS -->
+            </div>
+            <div class="impulse-headline" id="impulse-headline">
+                <!-- Impulse window + catalyst + probabilities populated by JS -->
             </div>
         </section>
+
+        <!-- ══════════════════════════════════════════════════════════
+             SECTION 2: THE CYCLE TIMELINE (The Differentiator)
+             ══════════════════════════════════════════════════════════ -->
+        <section class="timeline-section">
+            <h2>Cycle Timeline — You Are Here</h2>
+            <div id="cycle-timeline">
+                <!-- Horizontal timeline with phases + you-are-here marker -->
+            </div>
+        </section>
+
+        <!-- ══════════════════════════════════════════════════════════
+             SECTION 3: COMPOSITE SCORE & HISTORY
+             ══════════════════════════════════════════════════════════ -->
 
         <!-- Score Gauge -->
         <section class="score-section">
@@ -108,15 +133,19 @@
             </div>
         </section>
 
-        <!-- 14-Layer Scoring -->
-        <section class="layers-section">
-            <h2>14-Layer Scoring Engine</h2>
-            <div class="layers-grid" id="layers-grid">
-                <!-- Each layer rendered by JS -->
+        <!-- ══════════════════════════════════════════════════════════
+             SECTION 4: EASING MECHANISM TRACKER
+             ══════════════════════════════════════════════════════════ -->
+        <section class="easing-section">
+            <h2>Easing Mechanism Tracker</h2>
+            <div id="easing-tracker">
+                <!-- 6 easing mechanisms with status badges -->
             </div>
         </section>
 
-        <!-- Impulse Probability Engine -->
+        <!-- ══════════════════════════════════════════════════════════
+             SECTION 5: IMPULSE PROBABILITY ENGINE
+             ══════════════════════════════════════════════════════════ -->
         <section class="impulse-section">
             <h2>Impulse Probability Engine</h2>
             <div id="impulse-engine">
@@ -124,23 +153,19 @@
             </div>
         </section>
 
-        <!-- Projected Cycle Phases -->
-        <section class="projection-section">
-            <h2>Projected Cycle Phases</h2>
-            <div id="projected-phases">
-                <!-- Populated by JS: 5-phase timeline with price targets -->
+        <!-- ══════════════════════════════════════════════════════════
+             SECTION 6: 14-LAYER SCORING (Grouped by Category)
+             ══════════════════════════════════════════════════════════ -->
+        <section class="layers-section">
+            <h2>14-Layer Scoring Engine</h2>
+            <div class="layers-grouped" id="layers-grouped">
+                <!-- Groups by category -->
             </div>
         </section>
 
-        <!-- Cycle Intelligence (v7.7) -->
-        <section class="cycle-section">
-            <h2>Cycle Intelligence</h2>
-            <div id="cycle-intelligence">
-                <!-- Populated by JS -->
-            </div>
-        </section>
-
-        <!-- Market Data Grid -->
+        <!-- ══════════════════════════════════════════════════════════
+             SECTION 7: MARKET WATCHBOARDS (Macro + Crypto)
+             ══════════════════════════════════════════════════════════ -->
         <section class="market-data-section">
             <h2>Live Market Data</h2>
             <div class="data-grid">
@@ -288,6 +313,44 @@
                         <span class="data-value" id="wti-price">$--</span>
                     </div>
                 </div>
+            </div>
+        </section>
+
+        <!-- ══════════════════════════════════════════════════════════
+             SECTION 8: ETH/BTC & ROTATION ANALYSIS
+             ══════════════════════════════════════════════════════════ -->
+        <section class="rotation-section">
+            <h2>ETH/BTC & Rotation Analysis</h2>
+            <div id="rotation-analysis">
+                <!-- Rotation signal, conditions checklist, allocation -->
+            </div>
+        </section>
+
+        <!-- ══════════════════════════════════════════════════════════
+             SECTION 9: SYNOPSIS (Plain English Brief)
+             ══════════════════════════════════════════════════════════ -->
+        <section class="synopsis-section">
+            <h2>Analyst Synopsis</h2>
+            <div id="synopsis-block">
+                <!-- Today's catalyst, structural picture, risks remaining -->
+            </div>
+        </section>
+
+        <!-- ══════════════════════════════════════════════════════════
+             SECTION 10: HISTORICAL ANALOG COMPARISON
+             ══════════════════════════════════════════════════════════ -->
+        <section class="analog-section">
+            <h2>Historical Analog Comparison</h2>
+            <div id="historical-analog">
+                <!-- Q4 2019 vs current comparison table -->
+            </div>
+        </section>
+
+        <!-- Cycle Intelligence (drivers) -->
+        <section class="cycle-section">
+            <h2>Accelerators & Decelerators</h2>
+            <div id="cycle-intelligence">
+                <!-- Populated by JS -->
             </div>
         </section>
 

@@ -432,21 +432,28 @@ def generate_cycle_intelligence(inp: ModelInputs, cycle: dict) -> dict:
     if inp.wti_price > 100:
         rate_cut_prob = max(30, rate_cut_prob - 25)  # Oil constraint delays cuts
 
+    # Status logic: ACTIVE = currently deploying, EMERGING = early signals,
+    # PENDING = confirmed but not yet deployed, POSSIBLE = conditional,
+    # CONDITIONAL = requires specific trigger, TAIL = low-probability last resort
+    rate_cuts_status = "PENDING" if cycle.get("chair_regime") in ("DOVISH", "POLITICAL_DOVE") else "POSSIBLE"
+    yield_curve_status = "CONDITIONAL"
+    qe_status = "TAIL" if inp.hy_oas < 5 else "POSSIBLE"
+
     easing = [
         {"mechanism": "Treasury stealth (TGA drawdown, buybacks)",
-         "probability": 90, "impact": "Moderate", "timeline": "Ongoing"},
+         "probability": 90, "impact": "Moderate", "timeline": "Ongoing", "status": "ACTIVE"},
         {"mechanism": "Bank deregulation (SLR, capital requirements)",
-         "probability": 85, "impact": "Strong", "timeline": "3-6 months"},
+         "probability": 85, "impact": "Strong", "timeline": "3-6 months", "status": "EMERGING"},
         {"mechanism": "Rate cuts (Warsh)",
-         "probability": rate_cut_prob, "impact": "Strong", "timeline": "Jun-Sep 2026"},
+         "probability": rate_cut_prob, "impact": "Strong", "timeline": "Jun-Sep 2026", "status": rate_cuts_status},
         {"mechanism": "Regulatory catalysts (BTC reserve, stablecoin bill)",
-         "probability": 60, "impact": "BTC-specific", "timeline": "Q3-Q4 2026"},
+         "probability": 60, "impact": "BTC-specific", "timeline": "Q3-Q4 2026", "status": "POSSIBLE"},
         {"mechanism": "Yield curve management",
          "probability": 40 if inp.yield_curve_2s10s < -0.5 else 25,
-         "impact": "Very strong", "timeline": "If 10Y > 5%"},
+         "impact": "Very strong", "timeline": "If 10Y > 5%", "status": yield_curve_status},
         {"mechanism": "Full QE (balance sheet expansion)",
          "probability": 20 if inp.hy_oas < 5 else 40,
-         "impact": "Very strong", "timeline": "Recession only"},
+         "impact": "Nuclear", "timeline": "Recession only", "status": qe_status},
     ]
 
     # ── Projected Cycle Phases (thesis Section 4.2) ──
@@ -560,13 +567,272 @@ def generate_cycle_intelligence(inp: ModelInputs, cycle: dict) -> dict:
     if inp.funding_rate > 0.05:
         decelerators.append(f"Funding {inp.funding_rate*100:.3f}% — excessive leverage")
 
+    # ── Key dated events (calendar checkpoints) ──
+    key_events = [
+        {"date": "2025-12-01", "label": "QT Ended", "category": "policy"},
+        {"date": "2026-05-15", "label": "Powell term ends / Warsh begins", "category": "policy"},
+        {"date": "2026-06-17", "label": "Warsh first FOMC", "category": "policy"},
+        {"date": "2026-09-17", "label": "Sep FOMC (base case cut)", "category": "policy"},
+        {"date": "2026-11-03", "label": "US midterm elections", "category": "political"},
+        {"date": "2026-12-16", "label": "Dec FOMC", "category": "policy"},
+    ]
+
     return {
         "position": position,
         "easing_mechanisms": easing,
         "projected_phases": projected_phases,
         "current_phase": current_phase,
+        "key_events": key_events,
         "accelerators": accelerators,
         "decelerators": decelerators,
+    }
+
+
+# =============================================================================
+# SYNOPSIS GENERATION
+# =============================================================================
+
+def generate_synopsis(inp: ModelInputs, cycle: dict, signal: dict, intelligence: dict) -> dict:
+    """Generate plain-English synopsis: today's catalyst, structural picture, risks."""
+    months_since_qt = cycle.get("months_since_qt_end", 0)
+    score = signal.get("final_score", 0)
+    signal_name = signal.get("signal", "HOLD")
+    aligned = signal.get("catalysts_aligned", 0)
+    total = signal.get("catalysts_total", 10)
+    current_phase = intelligence.get("current_phase", 1)
+
+    # ── Today's catalyst: biggest single driver from current data ──
+    catalyst_parts = []
+    if inp.wti_price > 100:
+        catalyst_parts.append(f"Oil at ${inp.wti_price:.0f} (above Fed comfort zone) — inflation constraint elevated")
+    elif inp.wti_price > 0 and inp.wti_price < 75:
+        catalyst_parts.append(f"Oil at ${inp.wti_price:.0f} — deflationary tailwind, Fed comfort zone")
+
+    if inp.fear_greed < 15:
+        catalyst_parts.append(f"Fear & Greed at {inp.fear_greed} (extreme fear) — strongest contrarian signal")
+    elif inp.fear_greed > 80:
+        catalyst_parts.append(f"Fear & Greed at {inp.fear_greed} (extreme greed) — distribution risk elevated")
+
+    if inp.etf_flow_weekly > 500:
+        catalyst_parts.append(f"ETF weekly flow +${inp.etf_flow_weekly:.0f}M — strong institutional demand")
+    elif inp.etf_flow_weekly < -500:
+        catalyst_parts.append(f"ETF weekly outflow ${inp.etf_flow_weekly:.0f}M — institutional distribution")
+
+    if abs(inp.funding_rate) < 0.005 and inp.mvrv < 1.5:
+        catalyst_parts.append("Neutral funding + deep value MVRV — deleveraged base-building")
+
+    if not catalyst_parts:
+        catalyst_parts.append(f"Market consolidating at MVRV {inp.mvrv:.2f}, F&G {inp.fear_greed}")
+
+    todays_catalyst = ". ".join(catalyst_parts) + "."
+
+    # ── Structural picture: 2-3 sentence narrative ──
+    regime_txt = cycle.get("liquidity_regime", "NEUTRAL").replace("_", " ")
+    biz_txt = cycle.get("business_phase", "EXPANSION").replace("_", " ")
+    btc_txt = cycle.get("btc_phase", "ACCUMULATION").replace("_", " ")
+
+    structural = (
+        f"The model reads a {regime_txt} liquidity regime, {biz_txt} business cycle, and {btc_txt} BTC phase — "
+        f"mapping to Q4 2019 (analog), {months_since_qt:.0f} months post-QT end. "
+        f"{aligned}/{total} impulse catalysts aligned; final score {score:.1f} ({signal_name.replace('_', ' ')}). "
+    )
+
+    # Add layer-level insight
+    layers_result = signal.get("rationale", [])
+    if layers_result:
+        structural += f"Top contributors: {', '.join(layers_result[:3])}. "
+
+    # Current phase context
+    phases = intelligence.get("projected_phases", [])
+    active_phase = next((p for p in phases if p.get("status") == "ACTIVE"), None)
+    if active_phase:
+        structural += f"Currently in Phase {active_phase['phase']}: {active_phase['name']} ({active_phase['timeline']})."
+
+    # ── Risks remaining ──
+    risks = []
+    if inp.wti_price > 0 and inp.wti_price > 95:
+        risks.append(f"Oil above ${inp.wti_price:.0f} could delay Fed pivot and re-ignite inflation")
+    if inp.hy_oas > 4.0:
+        risks.append(f"Credit stress (HY OAS {inp.hy_oas:.1f}%) signals risk-off regime developing")
+    if inp.fear_greed > 80:
+        risks.append(f"Euphoria (F&G {inp.fear_greed}) — distribution risk as positioning crowds long")
+    if inp.funding_rate > 0.03:
+        risks.append(f"Excessive funding ({inp.funding_rate*100:.3f}%) — liquidation cascade risk")
+    if cycle.get("chair_regime") == "NEUTRAL" and months_since_qt < 3:
+        risks.append("Fed chair still neutral and regime young — transmission lag may extend")
+    if inp.etf_flow_weekly < -500:
+        risks.append(f"Sustained ETF outflows (${inp.etf_flow_weekly:.0f}M/wk) would invalidate demand thesis")
+
+    # Always-on tail risks
+    risks.append("Iran/Strait of Hormuz escalation: oil >$150 breaks macro framework")
+    risks.append("Regulatory action: US ETF ban or mining prohibition (low probability)")
+
+    return {
+        "todays_catalyst": todays_catalyst,
+        "structural_picture": structural,
+        "risks_remaining": risks[:5],  # Top 5 only
+    }
+
+
+# =============================================================================
+# HISTORICAL ANALOG COMPARISON (Q4 2019)
+# =============================================================================
+
+def generate_historical_analog(inp: ModelInputs, cycle: dict) -> dict:
+    """Compare current cycle position to Q4 2019 analog (closest QT-end precedent)."""
+    # Q4 2019 reference values (fixed historical data)
+    q4_2019 = {
+        "months_since_qt": 5,
+        "drawdown_pct": -53,
+        "fed_regime": "NEUTRAL",
+        "mvrv": 1.4,
+        "fear_greed": 24,
+        "hy_oas": 3.5,
+    }
+
+    # Current values
+    current = {
+        "months_since_qt": cycle.get("months_since_qt_end", 0),
+        "drawdown_pct": inp.drawdown_pct,
+        "fed_regime": cycle.get("chair_regime", "NEUTRAL"),
+        "mvrv": inp.mvrv,
+        "fear_greed": inp.fear_greed,
+        "hy_oas": inp.hy_oas,
+    }
+
+    def match_pct(a, b, max_diff):
+        """Return match % based on how close a is to b (closer = higher)."""
+        if a == 0 and b == 0:
+            return 100
+        diff = abs(a - b)
+        return max(0, round(100 * (1 - diff / max_diff)))
+
+    # Compute per-metric match scores
+    metrics = [
+        {
+            "name": "Months since QT end",
+            "q4_2019": f"{q4_2019['months_since_qt']}",
+            "current": f"{current['months_since_qt']:.1f}",
+            "match": match_pct(current['months_since_qt'], q4_2019['months_since_qt'], 3),
+        },
+        {
+            "name": "BTC drawdown from ATH",
+            "q4_2019": f"{q4_2019['drawdown_pct']}%",
+            "current": f"{current['drawdown_pct']:.0f}%",
+            "match": match_pct(current['drawdown_pct'], q4_2019['drawdown_pct'], 15),
+        },
+        {
+            "name": "Fed regime",
+            "q4_2019": q4_2019['fed_regime'],
+            "current": current['fed_regime'],
+            "match": 100 if current['fed_regime'] == q4_2019['fed_regime'] else 60,
+        },
+        {
+            "name": "MVRV",
+            "q4_2019": f"{q4_2019['mvrv']:.2f}",
+            "current": f"{current['mvrv']:.2f}",
+            "match": match_pct(current['mvrv'], q4_2019['mvrv'], 0.5),
+        },
+        {
+            "name": "Fear & Greed",
+            "q4_2019": f"{q4_2019['fear_greed']}",
+            "current": f"{current['fear_greed']}",
+            "match": match_pct(current['fear_greed'], q4_2019['fear_greed'], 30),
+        },
+        {
+            "name": "HY OAS",
+            "q4_2019": f"{q4_2019['hy_oas']:.1f}%",
+            "current": f"{current['hy_oas']:.2f}%",
+            "match": match_pct(current['hy_oas'], q4_2019['hy_oas'], 1.5),
+        },
+    ]
+
+    overall_match = round(sum(m["match"] for m in metrics) / len(metrics))
+
+    what_happened_next = [
+        "Oct 2019: Stealth QE (repo operations) began",
+        "Mar 2020: COVID crash -50% in days",
+        "Mar 2020 - Nov 2021: $5K -> $64K impulse (+1,180%)",
+        "QE3.5 + unlimited balance sheet + fiscal stimulus",
+    ]
+
+    return {
+        "analog_period": "Q4 2019 (5 months post-QT end)",
+        "overall_match": overall_match,
+        "metrics": metrics,
+        "what_happened_next": what_happened_next,
+        "lesson": "2019 transmission lag was ~12 months QT-end to sustained impulse. ETF infrastructure may compress this in current cycle.",
+    }
+
+
+# =============================================================================
+# ETH/BTC ROTATION ANALYSIS
+# =============================================================================
+
+def generate_rotation_analysis(inp: ModelInputs) -> dict:
+    """Evaluate BTC -> ETH -> altcoin rotation conditions."""
+    # Rotation conditions (all must be met for full alt season)
+    btc_dom_ok = inp.btc_dominance > 0 and inp.btc_dominance < 55
+    eth_btc_ok = inp.eth_btc > 0.040
+    fg_ok = inp.fear_greed > 50
+
+    conditions = [
+        {
+            "name": "BTC Dominance < 55%",
+            "target": "< 55%",
+            "current": f"{inp.btc_dominance:.1f}%" if inp.btc_dominance > 0 else "--",
+            "met": btc_dom_ok,
+        },
+        {
+            "name": "ETH/BTC > 0.040",
+            "target": "> 0.040",
+            "current": f"{inp.eth_btc:.5f}" if inp.eth_btc > 0 else "--",
+            "met": eth_btc_ok,
+        },
+        {
+            "name": "Fear & Greed > 50",
+            "target": "> 50",
+            "current": f"{inp.fear_greed}" if inp.fear_greed > 0 else "--",
+            "met": fg_ok,
+        },
+    ]
+
+    met_count = sum(1 for c in conditions if c["met"])
+
+    if met_count == 3:
+        signal_text = "ROTATION ACTIVE"
+        signal_class = "active"
+        allocation = {"BTC": 25, "ETH": 35, "ALT": 40}
+    elif met_count == 2:
+        signal_text = "ROTATION FORMING"
+        signal_class = "forming"
+        allocation = {"BTC": 30, "ETH": 35, "ALT": 35}
+    elif met_count == 1:
+        signal_text = "EARLY SIGNS"
+        signal_class = "early"
+        allocation = {"BTC": 40, "ETH": 30, "ALT": 30}
+    else:
+        signal_text = "NOT YET"
+        signal_class = "not-yet"
+        allocation = {"BTC": 40, "ETH": 30, "ALT": 30}
+
+    # Dominance threshold indicators
+    thresholds = [
+        {"level": "55%", "label": "Altcoin season approaching", "crossed": inp.btc_dominance < 55 and inp.btc_dominance > 0},
+        {"level": "50%", "label": "Active rotation", "crossed": inp.btc_dominance < 50 and inp.btc_dominance > 0},
+        {"level": "45%", "label": "Full alt season", "crossed": inp.btc_dominance < 45 and inp.btc_dominance > 0},
+    ]
+
+    return {
+        "signal": signal_text,
+        "signal_class": signal_class,
+        "conditions": conditions,
+        "conditions_met": met_count,
+        "conditions_total": len(conditions),
+        "suggested_allocation": allocation,
+        "thresholds": thresholds,
+        "eth_btc": inp.eth_btc,
+        "btc_dominance": inp.btc_dominance,
     }
 
 
@@ -579,6 +845,9 @@ def run_analysis(inputs: ModelInputs) -> dict:
     layers, cycle = score_all_layers(inputs)
     result = generate_signal(layers, inputs, cycle)
     intelligence = generate_cycle_intelligence(inputs, cycle)
+    synopsis = generate_synopsis(inputs, cycle, result, intelligence)
+    analog = generate_historical_analog(inputs, cycle)
+    rotation = generate_rotation_analysis(inputs)
 
     net_liq = inputs.fed_bs - inputs.rrp - inputs.tga if inputs.fed_bs else 0
 
@@ -589,6 +858,9 @@ def run_analysis(inputs: ModelInputs) -> dict:
         "layers": layers,
         "cycle": cycle,
         "intelligence": intelligence,
+        "synopsis": synopsis,
+        "historical_analog": analog,
+        "rotation": rotation,
         "inputs": inputs.to_dict(),
         "market_data": {
             "btc_price": inputs.btc_price,
