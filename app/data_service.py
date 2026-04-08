@@ -912,7 +912,7 @@ class DataServiceV76:
             self.fred.get_latest(client, "WALCL", lookback_days=14),
             self.fred.get_latest(client, "RRPONTSYD", lookback_days=14),
             self.fred.get_latest(client, "WTREGEN", lookback_days=14),
-            self.fred.get_latest(client, "DCOILWTICO", lookback_days=7),
+            self.fred.get_latest(client, "DCOILWTICO", lookback_days=14),
             return_exceptions=True,
         )
 
@@ -949,6 +949,9 @@ class DataServiceV76:
         if not isinstance(wti, Exception) and wti is not None:
             inputs.wti_price = wti
             inputs.sources["wti"] = "FRED DCOILWTICO"
+        else:
+            reason = str(wti) if isinstance(wti, Exception) else "no recent observation"
+            logger.warning(f"WTI (DCOILWTICO) unavailable: {reason}")
 
 
 # Singleton instance
