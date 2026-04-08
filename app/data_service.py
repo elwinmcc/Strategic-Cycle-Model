@@ -245,12 +245,99 @@ class FREDClient:
             return None
 
 
+class LiveWTIClient:
+    """Scrape live WTI crude oil price.
+
+    Primary: Yahoo Finance CL=F (WTI crude front-month futures, ~realtime).
+    Fallback: Stooq cl.f (15-min delayed CSV, no API key).
+
+    CL=F tracks WTI spot within ~$0.50 under normal conditions — acceptable
+    for a dashboard that was previously showing FRED's 2-5 day delayed data.
+    """
+
+    YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/CL=F"
+    STOOQ_URL = "https://stooq.com/q/l/"
+    HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/csv, */*",
+    }
+
+    async def fetch(self, client: httpx.AsyncClient) -> Tuple[Optional[float], Optional[str]]:
+        """Return (price, source) or (None, None)."""
+        # Try Yahoo first
+        price = await self._fetch_yahoo(client)
+        if price is not None:
+            return price, "Yahoo Finance CL=F (live)"
+
+        # Fall back to Stooq
+        price = await self._fetch_stooq(client)
+        if price is not None:
+            return price, "Stooq cl.f (15-min delayed)"
+
+        return None, None
+
+    async def _fetch_yahoo(self, client: httpx.AsyncClient) -> Optional[float]:
+        try:
+            resp = await client.get(
+                self.YAHOO_URL,
+                params={"interval": "1d", "range": "1d"},
+                headers=self.HEADERS,
+                timeout=8,
+            )
+            if resp.status_code != 200:
+                logger.warning(f"Yahoo WTI: HTTP {resp.status_code}")
+                return None
+            data = resp.json()
+            result = (data.get("chart", {}).get("result") or [None])[0]
+            if not result:
+                return None
+            meta = result.get("meta", {}) or {}
+            # Prefer live market price, fall back to last close
+            price = meta.get("regularMarketPrice") or meta.get("previousClose")
+            if price is None:
+                return None
+            return float(price)
+        except Exception as e:
+            logger.warning(f"Yahoo WTI error: {e}")
+            return None
+
+    async def _fetch_stooq(self, client: httpx.AsyncClient) -> Optional[float]:
+        try:
+            resp = await client.get(
+                self.STOOQ_URL,
+                params={"s": "cl.f", "f": "sd2t2ohlcv", "h": "", "e": "csv"},
+                headers=self.HEADERS,
+                timeout=8,
+            )
+            if resp.status_code != 200:
+                logger.warning(f"Stooq WTI: HTTP {resp.status_code}")
+                return None
+            # CSV: Symbol,Date,Time,Open,High,Low,Close,Volume
+            lines = resp.text.strip().splitlines()
+            if len(lines) < 2:
+                return None
+            parts = lines[1].split(",")
+            if len(parts) < 7:
+                return None
+            close = parts[6]
+            if close in ("N/D", "", "-"):
+                return None
+            return float(close)
+        except Exception as e:
+            logger.warning(f"Stooq WTI error: {e}")
+            return None
+
+
 class DataServiceV76:
     """Data service for BTC Model v7.6 — CoinGlass v4 + FRED."""
 
     def __init__(self):
         self.cg = CoinGlassClient(COINGLASS_API_KEY)
         self.fred = FREDClient(FRED_API_KEY)
+        self.wti = LiveWTIClient()
         self.timeout = httpx.Timeout(20.0)
 
     async def collect_all_data(self) -> ModelInputs:
@@ -270,6 +357,13 @@ class DataServiceV76:
             for i, r in enumerate(results):
                 if isinstance(r, Exception):
                     logger.error(f"Data fetch error (task {i}): {r}")
+
+            # Live WTI scrape runs after FRED so it overwrites the delayed
+            # fallback value without racing the gather.
+            try:
+                await self._fetch_wti_live(client, inputs)
+            except Exception as e:
+                logger.error(f"WTI live fetch error: {e}")
 
         # Log population summary
         key_fields = {
@@ -946,12 +1040,29 @@ class DataServiceV76:
             inputs.tga = tga / 1000
             inputs.sources["tga"] = "FRED WTREGEN"
 
+        # WTI from FRED (DCOILWTICO) is a fallback — live scrape preferred.
+        # _fetch_wti_live runs after this and overwrites if successful.
         if not isinstance(wti, Exception) and wti is not None:
             inputs.wti_price = wti
-            inputs.sources["wti"] = "FRED DCOILWTICO"
+            inputs.sources["wti"] = "FRED DCOILWTICO (delayed fallback)"
         else:
             reason = str(wti) if isinstance(wti, Exception) else "no recent observation"
             logger.warning(f"WTI (DCOILWTICO) unavailable: {reason}")
+
+    # ── Live WTI Scrape ─────────────────────────────────────────────
+
+    async def _fetch_wti_live(self, client: httpx.AsyncClient, inputs: ModelInputs):
+        """Scrape live WTI from Yahoo Finance (CL=F) with Stooq fallback.
+
+        Overwrites any FRED fallback value set by _fetch_fred_data.
+        """
+        price, source = await self.wti.fetch(client)
+        if price is not None and price > 0:
+            inputs.wti_price = price
+            inputs.sources["wti"] = source
+            logger.info(f"WTI live: ${price:.2f} from {source}")
+        else:
+            logger.warning("WTI live scrape failed — keeping FRED fallback if available")
 
 
 # Singleton instance
