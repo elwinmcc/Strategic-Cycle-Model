@@ -26,6 +26,7 @@ from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
 
 from model.btc_model_v76 import ModelInputs, clamp, interp
+from model.projection_engine import generate_projections
 
 
 # =============================================================================
@@ -837,6 +838,37 @@ def generate_rotation_analysis(inp: ModelInputs) -> dict:
 
 
 # =============================================================================
+# PROJECTION → PHASE BRIDGE
+# =============================================================================
+
+# Maps projected_phases phase number → composite horizon for price ranges.
+_PHASE_HORIZON_MAP = {
+    2: "180d",   # Phase 2 (Fed Pivot) → ~6 months out
+    3: "365d",   # Phase 3 (Easing Regime) → ~12 months out
+    4: "540d",   # Phase 4 (Impulse) → ~18 months out
+    5: "730d",   # Phase 5 (Distribution) → ~24 months out
+}
+
+
+def _apply_composite_to_phases(intelligence: dict, composite: dict):
+    """Replace crude price multipliers in projected_phases with composite projections.
+
+    Phase 1 keeps its current-price-anchored range (accumulation floor/ceiling).
+    Phases 2-5 use the composite bear/bull at the appropriate horizon.
+    """
+    phases = intelligence.get("projected_phases", [])
+    for phase in phases:
+        p_num = phase.get("phase")
+        horizon = _PHASE_HORIZON_MAP.get(p_num)
+        if horizon is None or horizon not in composite:
+            continue
+        c = composite[horizon]
+        bear_k = c["bear"] / 1000
+        bull_k = c["bull"] / 1000
+        phase["price_range"] = f"${bear_k:.0f}K - ${bull_k:.0f}K"
+
+
+# =============================================================================
 # FULL ANALYSIS — v7.7
 # =============================================================================
 
@@ -845,6 +877,13 @@ def run_analysis(inputs: ModelInputs) -> dict:
     layers, cycle = score_all_layers(inputs)
     result = generate_signal(layers, inputs, cycle)
     intelligence = generate_cycle_intelligence(inputs, cycle)
+
+    # Projection engine — must run after intelligence is built
+    projections = generate_projections(inputs, cycle, intelligence, result)
+
+    # Enhance projected_phases with composite projections
+    _apply_composite_to_phases(intelligence, projections.get("composite", {}))
+
     synopsis = generate_synopsis(inputs, cycle, result, intelligence)
     analog = generate_historical_analog(inputs, cycle)
     rotation = generate_rotation_analysis(inputs)
@@ -858,6 +897,7 @@ def run_analysis(inputs: ModelInputs) -> dict:
         "layers": layers,
         "cycle": cycle,
         "intelligence": intelligence,
+        "projections": projections,
         "synopsis": synopsis,
         "historical_analog": analog,
         "rotation": rotation,
