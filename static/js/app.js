@@ -49,8 +49,10 @@ function updateDashboard(data) {
     updatePositionTriplet(data);
     updateImpulseHeadline(data);
     updateCycleTimeline(data);
+    updateProjections(data);
     updateCompositeScore(data);
     saveAndRenderScoreHistory(data);
+    updateLiquidityDashboard(data);
     updateEasingTracker(data);
     updateImpulseEngine(data);
     updateLayersGrouped(data);
@@ -58,7 +60,7 @@ function updateDashboard(data) {
     updateRotation(data);
     updateSynopsis(data);
     updateHistoricalAnalog(data);
-    updateCycleIntelligence(data);
+    updateAcceleratorsDecelerators(data);
     updateAudit(data);
     updateFooter(data);
 }
@@ -281,6 +283,228 @@ function togglePhaseDetail(phase) {
         `<div class="detail-desc">${p.description}</div>` +
         `<div class="detail-signals"><strong>Key signals:</strong> ${p.key_signals}</div>` +
         `<div class="detail-price"><strong>BTC price range:</strong> ${p.price_range}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PRICE PROJECTIONS
+// ═══════════════════════════════════════════════════════════════════
+
+function updateProjections(data) {
+    const proj = data.projections || {};
+    const el = document.getElementById('projections-dashboard');
+    if (!el || !proj.composite) return;
+
+    const horizons = proj.horizons || [];
+    const composite = proj.composite || {};
+    const methods = proj.methods || {};
+    const assumptions = proj.assumptions || {};
+    const disclaimers = proj.disclaimers || [];
+
+    let html = '';
+
+    // ── Composite projection table ──
+    html += '<div class="proj-composite">';
+    html += '<div class="proj-composite-header">';
+    html += '<h3>Composite Projection</h3>';
+    html += '<div class="proj-assumptions-inline">';
+    html += `<span>MVRV ${assumptions.current_mvrv || '--'}</span>`;
+    html += `<span>RP $${((assumptions.current_rp || 0) / 1000).toFixed(0)}K</span>`;
+    html += `<span>${(assumptions.current_phase || '--').replace(/_/g, ' ')}</span>`;
+    html += `<span>&beta; ${assumptions.beta_used || '--'}</span>`;
+    html += '</div></div>';
+
+    html += '<div class="proj-table">';
+    html += '<div class="proj-row proj-head">';
+    html += '<span class="proj-cell">Horizon</span>';
+    html += '<span class="proj-cell">Bear</span>';
+    html += '<span class="proj-cell">Base</span>';
+    html += '<span class="proj-cell">Bull</span>';
+    html += '<span class="proj-cell">Convergence</span>';
+    html += '<span class="proj-cell">Confidence</span>';
+    html += '</div>';
+
+    for (const h of horizons) {
+        const c = composite[h];
+        if (!c) continue;
+        const confClass = (c.confidence || '').toLowerCase().replace('_', '-');
+        const btcPrice = (data.market_data || {}).btc_price || 0;
+        const baseReturn = btcPrice > 0 ? ((c.base - btcPrice) / btcPrice * 100).toFixed(0) : '--';
+
+        html += `<div class="proj-row">`;
+        html += `<span class="proj-cell proj-horizon">${h}</span>`;
+        html += `<span class="proj-cell proj-bear">$${(c.bear / 1000).toFixed(0)}K</span>`;
+        html += `<span class="proj-cell proj-base">$${(c.base / 1000).toFixed(0)}K <span class="proj-return">(${baseReturn > 0 ? '+' : ''}${baseReturn}%)</span></span>`;
+        html += `<span class="proj-cell proj-bull">$${(c.bull / 1000).toFixed(0)}K</span>`;
+        html += `<span class="proj-cell proj-conv">${c.convergence_pct}%</span>`;
+        html += `<span class="proj-cell proj-conf ${confClass}">${(c.confidence || '').replace(/_/g, ' ')}</span>`;
+        html += `</div>`;
+    }
+    html += '</div></div>';
+
+    // ── Visual range bars ──
+    html += '<div class="proj-range-chart">';
+    // Find global min/max for scaling
+    let globalMin = Infinity, globalMax = 0;
+    for (const h of horizons) {
+        const c = composite[h];
+        if (!c) continue;
+        globalMin = Math.min(globalMin, c.bear);
+        globalMax = Math.max(globalMax, c.bull);
+    }
+    const range = globalMax - globalMin || 1;
+
+    for (const h of horizons) {
+        const c = composite[h];
+        if (!c) continue;
+        const bearPct = ((c.bear - globalMin) / range * 100);
+        const basePct = ((c.base - globalMin) / range * 100);
+        const bullPct = ((c.bull - globalMin) / range * 100);
+        const barLeft = bearPct;
+        const barWidth = bullPct - bearPct;
+
+        html += `<div class="proj-bar-row">`;
+        html += `<span class="proj-bar-label">${h}</span>`;
+        html += `<div class="proj-bar-track">`;
+        html += `<div class="proj-bar-range" style="left:${barLeft}%;width:${barWidth}%">`;
+        html += `<div class="proj-bar-base" style="left:${barWidth > 0 ? ((basePct - bearPct) / barWidth * 100) : 50}%"></div>`;
+        html += `</div>`;
+        html += `</div>`;
+        html += `<span class="proj-bar-val">$${(c.base / 1000).toFixed(0)}K</span>`;
+        html += `</div>`;
+    }
+    html += '</div>';
+
+    // ── Per-method breakdown (collapsible) ──
+    html += '<div class="proj-methods">';
+    html += '<div class="proj-methods-toggle" onclick="toggleSection(\'proj-methods-content\')"><h3>Method Breakdown</h3><span class="toggle-icon">&#9660;</span></div>';
+    html += '<div class="proj-methods-content collapsed" id="proj-methods-content">';
+
+    const methodLabels = {
+        mvrv_anchored: 'MVRV-Anchored (40%)',
+        score_to_return: 'Score-to-Return (25%)',
+        liquidity_beta: 'Liquidity Beta (15%)',
+        catalyst_weighted: 'Catalyst-Weighted (20%)',
+    };
+
+    for (const [key, label] of Object.entries(methodLabels)) {
+        const m = methods[key];
+        html += `<div class="proj-method-card">`;
+        html += `<div class="proj-method-name">${label}</div>`;
+        if (!m) {
+            html += '<div class="proj-method-na">Data unavailable</div>';
+        } else {
+            html += '<div class="proj-method-grid">';
+            for (const h of horizons) {
+                const entry = m[h];
+                if (!entry) continue;
+                html += `<div class="proj-method-item">`;
+                html += `<span class="pmh">${h}</span>`;
+                html += `<span class="pmv">$${(entry.bear / 1000).toFixed(0)}K - $${(entry.bull / 1000).toFixed(0)}K</span>`;
+                html += `</div>`;
+            }
+            html += '</div>';
+            // Show notes from 365d entry
+            const note = (m['365d'] || {}).notes;
+            if (note) {
+                html += `<div class="proj-method-note">${note}</div>`;
+            }
+        }
+        html += '</div>';
+    }
+
+    html += '</div></div>';
+
+    // ── Disclaimers ──
+    if (disclaimers.length > 0) {
+        html += '<div class="proj-disclaimers">';
+        for (const d of disclaimers) {
+            html += `<span class="proj-disclaimer">${d}</span>`;
+        }
+        html += '</div>';
+    }
+
+    el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LIQUIDITY DASHBOARD
+// ═══════════════════════════════════════════════════════════════════
+
+function updateLiquidityDashboard(data) {
+    const md = data.market_data || {};
+    const cycle = data.cycle || {};
+    const el = document.getElementById('liquidity-dashboard');
+    if (!el) return;
+
+    const fedBs = md.fed_bs || 0;
+    const rrp = md.rrp || 0;
+    const tga = md.tga || 0;
+    const netLiq = md.net_liquidity_b || 0;
+    const m2Growth = md.global_m2_growth || 0;
+    const regime = (cycle.liquidity_regime || '--').replace(/_/g, ' ');
+    const monthsPostQt = cycle.months_since_qt_end || 0;
+
+    let html = '';
+
+    // ── Regime banner ──
+    const regimeClass = regime.includes('QE') ? 'easing' : regime.includes('LAG') ? 'tightening' : 'neutral';
+    html += `<div class="liq-regime-banner ${regimeClass}">`;
+    html += `<div class="liq-regime-label">Liquidity Regime</div>`;
+    html += `<div class="liq-regime-value">${regime}</div>`;
+    html += `<div class="liq-regime-sub">${monthsPostQt.toFixed(0)} months post-QT end</div>`;
+    html += '</div>';
+
+    // ── Component cards (Fed BS, RRP, TGA, Net Liq) ──
+    html += '<div class="liq-components">';
+
+    const components = [
+        { label: 'Fed Balance Sheet', value: fedBs, unit: 'B', color: 'var(--accent-blue)', desc: 'WALCL', sign: '+' },
+        { label: 'Reverse Repo (RRP)', value: rrp, unit: 'B', color: 'var(--accent-red)', desc: 'RRPONTSYD', sign: '-' },
+        { label: 'Treasury (TGA)', value: tga, unit: 'B', color: 'var(--accent-yellow)', desc: 'WTREGEN', sign: '-' },
+    ];
+
+    for (const c of components) {
+        html += `<div class="liq-card">`;
+        html += `<div class="liq-card-header">`;
+        html += `<span class="liq-card-label">${c.label}</span>`;
+        html += `<span class="liq-card-sign" style="color:${c.color}">${c.sign}</span>`;
+        html += `</div>`;
+        html += `<div class="liq-card-value" style="color:${c.color}">$${c.value.toFixed(0)}${c.unit}</div>`;
+        html += `<div class="liq-card-desc">${c.desc}</div>`;
+        html += `</div>`;
+    }
+    html += '</div>';
+
+    // ── Net Liquidity formula bar ──
+    html += '<div class="liq-formula">';
+    html += `<div class="liq-formula-eq">`;
+    html += `<span class="liq-f-term">Fed BS</span>`;
+    html += `<span class="liq-f-op">-</span>`;
+    html += `<span class="liq-f-term">RRP</span>`;
+    html += `<span class="liq-f-op">-</span>`;
+    html += `<span class="liq-f-term">TGA</span>`;
+    html += `<span class="liq-f-op">=</span>`;
+    html += `<span class="liq-f-result">Net Liquidity</span>`;
+    html += `</div>`;
+    html += `<div class="liq-formula-vals">`;
+    html += `<span>$${fedBs.toFixed(0)}B</span>`;
+    html += `<span>-</span>`;
+    html += `<span>$${rrp.toFixed(0)}B</span>`;
+    html += `<span>-</span>`;
+    html += `<span>$${tga.toFixed(0)}B</span>`;
+    html += `<span>=</span>`;
+    html += `<span class="liq-net-val">$${netLiq.toFixed(0)}B</span>`;
+    html += `</div>`;
+    html += '</div>';
+
+    // ── M2 Growth ──
+    html += '<div class="liq-m2">';
+    html += `<span class="liq-m2-label">Global M2 Growth (YoY)</span>`;
+    const m2Class = m2Growth > 5 ? 'positive' : m2Growth > 0 ? 'neutral' : 'negative';
+    html += `<span class="liq-m2-value ${m2Class}">${m2Growth.toFixed(1)}%</span>`;
+    html += '</div>';
+
+    el.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -798,42 +1022,6 @@ const LAYER_ORDER = [
     'institutional', 'macro_liquidity', 'momentum',
 ];
 
-function updateLayers(data) {
-    const layers = data.layers || {};
-    const grid = document.getElementById('layers-grid');
-
-    let html = '';
-    for (const name of LAYER_ORDER) {
-        const layer = layers[name];
-        if (!layer) continue;
-
-        const score = layer.score || 0;
-        const weight = ((layer.weight || 0) * 100).toFixed(0);
-        const contribution = (layer.contribution || 0).toFixed(2);
-        const barWidth = score;
-        const barColor = getScoreColor(score);
-        const label = LAYER_LABELS[name] || name;
-
-        html += `
-            <div class="layer-card">
-                <div class="layer-header">
-                    <span class="layer-name">${label}</span>
-                    <span class="layer-weight">${weight}%</span>
-                </div>
-                <div class="layer-bar-row">
-                    <div class="layer-bar">
-                        <div class="layer-bar-fill" style="width: ${barWidth}%; background: ${barColor};"></div>
-                    </div>
-                    <span class="layer-score">${score}</span>
-                </div>
-                <div class="layer-contribution">Contribution: ${contribution}</div>
-                <div class="layer-reasoning">${layer.reasoning || ''}</div>
-            </div>
-        `;
-    }
-    grid.innerHTML = html;
-}
-
 function getScoreColor(score) {
     if (score >= 70) return '#10b981';
     if (score >= 55) return '#34d399';
@@ -921,98 +1109,17 @@ function updateImpulseEngine(data) {
 // PROJECTED CYCLE PHASES
 // ═══════════════════════════════════════════════════════════════════
 
-function updateProjectedPhases(data) {
-    const intel = data.intelligence || {};
-    const el = document.getElementById('projected-phases');
-    if (!el) return;
-
-    const phases = intel.projected_phases || [];
-    const currentPhase = intel.current_phase || 1;
-
-    if (phases.length === 0) {
-        el.innerHTML = '<p class="no-data">Projection data not available</p>';
-        return;
-    }
-
-    let html = '';
-
-    // Phase timeline
-    html += '<div class="phase-timeline">';
-    for (const p of phases) {
-        const statusClass = p.status === 'ACTIVE' ? 'active' : p.status === 'COMPLETED' ? 'completed' : 'projected';
-        html += `<div class="phase-card ${statusClass}">`;
-        html += `<div class="phase-header">`;
-        html += `<span class="phase-number">Phase ${p.phase}</span>`;
-        html += `<span class="phase-status-badge ${statusClass}">${p.status}</span>`;
-        html += `</div>`;
-        html += `<div class="phase-name">${p.name}</div>`;
-        html += `<div class="phase-timeline-range">${p.timeline}</div>`;
-        html += `<div class="phase-price">${p.price_range}</div>`;
-        html += `<div class="phase-desc">${p.description}</div>`;
-        html += `<div class="phase-signals">${p.key_signals}</div>`;
-        html += `</div>`;
-    }
-    html += '</div>';
-
-    // Current phase indicator
-    const active = phases.find(p => p.status === 'ACTIVE');
-    if (active) {
-        html += `<div class="current-phase-summary">`;
-        html += `<span class="current-label">Current Position:</span> `;
-        html += `<strong>Phase ${active.phase} — ${active.name}</strong>`;
-        html += `<span class="current-timeline">${active.timeline}</span>`;
-        html += `</div>`;
-    }
-
-    el.innerHTML = html;
-}
-
 // ═══════════════════════════════════════════════════════════════════
-// CYCLE INTELLIGENCE (v7.7)
+// ACCELERATORS & DECELERATORS
 // ═══════════════════════════════════════════════════════════════════
 
-function updateCycleIntelligence(data) {
+function updateAcceleratorsDecelerators(data) {
     const intel = data.intelligence || {};
-    const cycle = data.cycle || {};
     const el = document.getElementById('cycle-intelligence');
     if (!el) return;
 
-    const pos = intel.position || cycle || {};
     let html = '';
 
-    // Cycle Position
-    html += '<div class="cycle-position">';
-    html += `<div class="cycle-item"><span class="cycle-label">Liquidity Regime</span><span class="cycle-value">${(pos.liquidity_regime || '--').replace(/_/g, ' ')}</span></div>`;
-    html += `<div class="cycle-item"><span class="cycle-label">Business Cycle</span><span class="cycle-value">${(pos.business_cycle || pos.business_phase || '--').replace(/_/g, ' ')}</span></div>`;
-    html += `<div class="cycle-item"><span class="cycle-label">BTC Cycle</span><span class="cycle-value">${(pos.btc_cycle || pos.btc_phase || '--').replace(/_/g, ' ')}</span></div>`;
-    html += `<div class="cycle-item"><span class="cycle-label">Fed Chair</span><span class="cycle-value">${pos.fed_chair || '--'} (${(pos.chair_regime || '--').replace(/_/g, ' ')})</span></div>`;
-    if (pos.months_since_qt_end !== undefined) {
-        html += `<div class="cycle-item"><span class="cycle-label">Post-QT</span><span class="cycle-value">${pos.months_since_qt_end} months</span></div>`;
-    }
-    html += '</div>';
-
-    // Easing mechanisms (6 per thesis Section V)
-    const easing = intel.easing_mechanisms || [];
-    if (easing.length > 0) {
-        html += '<div class="easing-table"><h4>Easing Spectrum (Probability / Impact / Timeline)</h4>';
-        for (const em of easing) {
-            const pct = em.probability || 0;
-            const barW = Math.min(100, pct);
-            const barColor = pct >= 80 ? '#3fb950' : pct >= 50 ? '#d29922' : '#8b949e';
-            html += `<div class="easing-row">`;
-            html += `<div class="easing-bar" style="width:${barW}%;background:${barColor}"></div>`;
-            html += `<span class="easing-pct">${pct}%</span>`;
-            html += `<span class="easing-name">${em.mechanism}</span>`;
-            html += `<span class="easing-impact">${em.impact || ''}</span>`;
-            if (em.timeline) {
-                html += `<span class="easing-timeline">${em.timeline}</span>`;
-            }
-            html += `</div>`;
-        }
-        html += '</div>';
-    }
-
-    // Accelerators / Decelerators
     const accel = intel.accelerators || [];
     const decel = intel.decelerators || [];
     if (accel.length > 0 || decel.length > 0) {
@@ -1028,6 +1135,8 @@ function updateCycleIntelligence(data) {
             html += '</div>';
         }
         html += '</div>';
+    } else {
+        html = '<p class="no-data">No active accelerators or decelerators.</p>';
     }
 
     el.innerHTML = html;
@@ -1091,8 +1200,6 @@ function updateMarketData(data) {
     setText('yield-curve', (md.yield_curve_2s10s || 0).toFixed(2) + '%');
     setText('init-claims', ((md.initial_claims || 0) / 1000).toFixed(0) + 'K');
     setText('anfci-value', (md.anfci || 0).toFixed(3));
-    setText('net-liq', '$' + (md.net_liquidity_b || 0).toFixed(0) + 'B');
-    setText('m2-growth', (md.global_m2_growth || 0).toFixed(1) + '%');
     setText('wti-price', '$' + (md.wti_price || 0).toFixed(0));
 }
 

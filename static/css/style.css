@@ -2076,3 +2076,471 @@ body {
     line-height: 1.5;
     font-style: italic;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   PRICE PROJECTIONS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.projections-section {
+    margin-bottom: var(--space-xl);
+}
+
+.projections-section h2 {
+    color: var(--text-primary);
+    margin-bottom: var(--space-lg);
+    font-size: 1.3rem;
+}
+
+.proj-composite {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.proj-composite-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: var(--space-md);
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+}
+
+.proj-composite-header h3 {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.proj-assumptions-inline {
+    display: flex;
+    gap: var(--space-md);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.proj-assumptions-inline span {
+    background: var(--bg-tertiary);
+    padding: 2px 8px;
+    border-radius: 3px;
+}
+
+.proj-table {
+    overflow-x: auto;
+}
+
+.proj-row {
+    display: grid;
+    grid-template-columns: 0.7fr 1fr 1.3fr 1fr 1fr 1.2fr;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--border-color);
+    align-items: center;
+    font-size: 0.82rem;
+}
+
+.proj-row:last-child { border-bottom: none; }
+
+.proj-row.proj-head {
+    background: var(--bg-tertiary);
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.proj-horizon {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--accent-blue);
+}
+
+.proj-bear {
+    color: var(--accent-red);
+    font-family: var(--font-mono);
+}
+
+.proj-base {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.proj-return {
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--accent-green);
+}
+
+.proj-bull {
+    color: var(--accent-green);
+    font-family: var(--font-mono);
+}
+
+.proj-conv {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.proj-conf {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-align: center;
+}
+
+.proj-conf.high-confidence { background: var(--accent-green-dim); color: var(--accent-green); }
+.proj-conf.moderate-confidence { background: var(--accent-yellow-dim); color: var(--accent-yellow); }
+.proj-conf.low-confidence { background: var(--bg-tertiary); color: var(--text-muted); }
+
+@media (max-width: 768px) {
+    .proj-row { grid-template-columns: 0.8fr 1fr 1fr 1fr; font-size: 0.75rem; }
+    .proj-conv, .proj-conf { display: none; }
+}
+
+/* ── Range bars ── */
+
+.proj-range-chart {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.proj-bar-row {
+    display: grid;
+    grid-template-columns: 50px 1fr 70px;
+    gap: var(--space-sm);
+    align-items: center;
+    margin-bottom: var(--space-sm);
+}
+
+.proj-bar-row:last-child { margin-bottom: 0; }
+
+.proj-bar-label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--accent-blue);
+}
+
+.proj-bar-track {
+    height: 20px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    position: relative;
+    overflow: visible;
+}
+
+.proj-bar-range {
+    position: absolute;
+    top: 2px;
+    height: 16px;
+    background: linear-gradient(90deg,
+        rgba(248, 81, 73, 0.3),
+        rgba(88, 166, 255, 0.25),
+        rgba(63, 185, 80, 0.3)
+    );
+    border-radius: 3px;
+    border: 1px solid rgba(88, 166, 255, 0.3);
+}
+
+.proj-bar-base {
+    position: absolute;
+    top: -2px;
+    width: 3px;
+    height: 20px;
+    background: var(--accent-blue);
+    border-radius: 2px;
+    transform: translateX(-50%);
+}
+
+.proj-bar-val {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-align: right;
+}
+
+/* ── Method breakdown ── */
+
+.proj-methods {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-bottom: var(--space-md);
+}
+
+.proj-methods-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md);
+    cursor: pointer;
+}
+
+.proj-methods-toggle h3 {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.proj-methods-content {
+    padding: 0 var(--space-md) var(--space-md);
+}
+
+.proj-method-card {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    padding: var(--space-md);
+    margin-bottom: var(--space-sm);
+}
+
+.proj-method-card:last-child { margin-bottom: 0; }
+
+.proj-method-name {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--accent-blue);
+    margin-bottom: var(--space-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.proj-method-na {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.8rem;
+}
+
+.proj-method-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: var(--space-xs);
+}
+
+@media (max-width: 768px) {
+    .proj-method-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.proj-method-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pmh {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.pmv {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-primary);
+}
+
+.proj-method-note {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: var(--space-sm);
+    font-style: italic;
+}
+
+/* ── Disclaimers ── */
+
+.proj-disclaimers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+}
+
+.proj-disclaimer {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    background: var(--bg-tertiary);
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-style: italic;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LIQUIDITY DASHBOARD
+   ═══════════════════════════════════════════════════════════════════ */
+
+.liquidity-section {
+    margin-bottom: var(--space-xl);
+}
+
+.liquidity-section h2 {
+    color: var(--text-primary);
+    margin-bottom: var(--space-lg);
+    font-size: 1.3rem;
+}
+
+.liq-regime-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md) var(--space-lg);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-md);
+    border: 1px solid var(--border-color);
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+}
+
+.liq-regime-banner.easing { background: var(--accent-green-dim); border-color: var(--accent-green); }
+.liq-regime-banner.tightening { background: var(--accent-red-dim); border-color: var(--accent-red); }
+.liq-regime-banner.neutral { background: var(--bg-card); border-color: var(--border-color); }
+
+.liq-regime-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.liq-regime-value {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-transform: uppercase;
+}
+
+.liq-regime-sub {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.liq-components {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+@media (max-width: 768px) {
+    .liq-components { grid-template-columns: 1fr; }
+}
+
+.liq-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+}
+
+.liq-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-xs);
+}
+
+.liq-card-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.liq-card-sign {
+    font-family: var(--font-mono);
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.liq-card-value {
+    font-family: var(--font-mono);
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: var(--space-xs);
+}
+
+.liq-card-desc {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+.liq-formula {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-md) var(--space-lg);
+    margin-bottom: var(--space-md);
+    text-align: center;
+}
+
+.liq-formula-eq {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.liq-formula-vals {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.liq-f-op {
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.liq-net-val {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--accent-blue);
+}
+
+.liq-m2 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-md) var(--space-lg);
+}
+
+.liq-m2-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.liq-m2-value {
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.liq-m2-value.positive { color: var(--accent-green); }
+.liq-m2-value.neutral { color: var(--accent-yellow); }
+.liq-m2-value.negative { color: var(--accent-red); }
