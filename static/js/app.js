@@ -464,12 +464,13 @@ function updateLiquidityDashboard(data) {
     ];
 
     for (const c of components) {
+        const displayVal = c.value >= 1 ? c.value.toFixed(0) : c.value.toFixed(1);
         html += `<div class="liq-card">`;
         html += `<div class="liq-card-header">`;
         html += `<span class="liq-card-label">${c.label}</span>`;
         html += `<span class="liq-card-sign" style="color:${c.color}">${c.sign}</span>`;
         html += `</div>`;
-        html += `<div class="liq-card-value" style="color:${c.color}">$${c.value.toFixed(0)}${c.unit}</div>`;
+        html += `<div class="liq-card-value" style="color:${c.color}">$${displayVal}${c.unit}</div>`;
         html += `<div class="liq-card-desc">${c.desc}</div>`;
         html += `</div>`;
     }
@@ -486,14 +487,15 @@ function updateLiquidityDashboard(data) {
     html += `<span class="liq-f-op">=</span>`;
     html += `<span class="liq-f-result">Net Liquidity</span>`;
     html += `</div>`;
+    const fmtB = v => v >= 1 ? `$${v.toFixed(0)}B` : `$${v.toFixed(1)}B`;
     html += `<div class="liq-formula-vals">`;
-    html += `<span>$${fedBs.toFixed(0)}B</span>`;
+    html += `<span>${fmtB(fedBs)}</span>`;
     html += `<span>-</span>`;
-    html += `<span>$${rrp.toFixed(0)}B</span>`;
+    html += `<span>${fmtB(rrp)}</span>`;
     html += `<span>-</span>`;
-    html += `<span>$${tga.toFixed(0)}B</span>`;
+    html += `<span>${fmtB(tga)}</span>`;
     html += `<span>=</span>`;
-    html += `<span class="liq-net-val">$${netLiq.toFixed(0)}B</span>`;
+    html += `<span class="liq-net-val">${fmtB(netLiq)}</span>`;
     html += `</div>`;
     html += '</div>';
 

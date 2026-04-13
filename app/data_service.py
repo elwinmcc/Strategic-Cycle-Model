@@ -1033,7 +1033,7 @@ class DataServiceV76:
             inputs.sources["fed_bs"] = "FRED WALCL"
 
         if not isinstance(rrp, Exception) and rrp is not None:
-            inputs.rrp = rrp / 1000
+            inputs.rrp = rrp  # RRPONTSYD already in billions (unlike WALCL/WTREGEN which are millions)
             inputs.sources["rrp"] = "FRED RRPONTSYD"
 
         if not isinstance(tga, Exception) and tga is not None:
