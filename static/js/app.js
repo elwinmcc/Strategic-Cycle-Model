@@ -565,6 +565,25 @@ function updateSynopsis(data) {
         html += '</div>';
     }
 
+    // Tail signals (z-scored layers with |z| >= 2.5)
+    const tails = syn.tail_signals || [];
+    if (tails.length > 0) {
+        html += '<div class="synopsis-item synopsis-tail">';
+        html += '<h3 class="synopsis-title tail-title">TAIL SIGNAL</h3>';
+        for (const t of tails) {
+            const dirClass = t.direction === 'HIGH' ? 'tail-high' : 'tail-low';
+            html += `<div class="tail-callout ${dirClass}">`;
+            html += `<div class="tail-header">`;
+            html += `<span class="tail-layer">${t.layer}</span>`;
+            html += `<span class="tail-z">z=${t.z.toFixed(2)}</span>`;
+            html += `<span class="tail-pct">P${t.percentile.toFixed(0)}</span>`;
+            html += `</div>`;
+            html += `<div class="tail-interp">${t.interpretation}</div>`;
+            html += `</div>`;
+        }
+        html += '</div>';
+    }
+
     const risks = syn.risks_remaining || [];
     if (risks.length > 0) {
         html += '<div class="synopsis-item">';

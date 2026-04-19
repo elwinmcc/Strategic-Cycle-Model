@@ -1989,6 +1989,66 @@ body {
     left: 0;
 }
 
+/* Tail Signal Callouts */
+.synopsis-tail {
+    border: 1px solid rgba(248, 81, 73, 0.3);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    background: rgba(248, 81, 73, 0.05);
+}
+
+.tail-title {
+    color: var(--accent-red) !important;
+    letter-spacing: 1.5px;
+    font-size: 0.85rem !important;
+}
+
+.tail-callout {
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-sm);
+    border-left: 3px solid var(--accent-red);
+    background: rgba(248, 81, 73, 0.06);
+}
+
+.tail-callout.tail-high {
+    border-left-color: var(--accent-red);
+}
+
+.tail-callout.tail-low {
+    border-left-color: var(--accent-green);
+    background: rgba(63, 185, 80, 0.06);
+}
+
+.tail-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: 4px;
+}
+
+.tail-layer {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.tail-z, .tail-pct {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(163, 113, 247, 0.15);
+    color: var(--accent-purple);
+}
+
+.tail-interp {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    font-style: italic;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    HISTORICAL ANALOG COMPARISON
    ═══════════════════════════════════════════════════════════════════ */

@@ -563,6 +563,9 @@ def generate_cycle_intelligence(inp: ModelInputs, cycle: dict) -> dict:
     accelerators = []
     decelerators = []
 
+    # Normalize ETF flow to millions for display
+    etf_wk_m = inp.etf_flow_weekly / 1e6 if abs(inp.etf_flow_weekly) > 1e5 else inp.etf_flow_weekly
+
     if inp.wti_price > 0 and inp.wti_price < 70:
         accelerators.append(f"Oil ${inp.wti_price:.0f} — deflationary tailwind")
     elif inp.wti_price > 0 and inp.wti_price < 85:
@@ -583,8 +586,8 @@ def generate_cycle_intelligence(inp: ModelInputs, cycle: dict) -> dict:
     if inp.mvrv > 0 and inp.mvrv < 1.5:
         accelerators.append(f"MVRV {inp.mvrv:.2f} — deep value zone")
 
-    if inp.etf_flow_weekly > 200:
-        accelerators.append(f"ETF weekly +${inp.etf_flow_weekly:.0f}M — strong institutional demand")
+    if etf_wk_m > 200:
+        accelerators.append(f"ETF weekly +${etf_wk_m:.0f}M — strong institutional demand")
 
     if months_since_qt >= 3:
         accelerators.append(f"{months_since_qt:.0f} months post-QT — approaching historical impulse window")
@@ -626,17 +629,87 @@ def generate_cycle_intelligence(inp: ModelInputs, cycle: dict) -> dict:
 
 
 # =============================================================================
+# TAIL SIGNAL DETECTION
+# =============================================================================
+
+TAIL_INTERPRETATIONS = {
+    "mvrv": {
+        "high": "Extreme overvaluation — historically associated with cycle tops and distribution phases",
+        "low":  "Extreme undervaluation — historically associated with generational buying opportunities",
+    },
+    "institutional_flow": {
+        "high": "Exceptional institutional demand — ETF inflows at statistical extremes",
+        "low":  "Extreme institutional outflows — capitulation-level redemptions",
+    },
+    "leverage_fragility": {
+        "high": "Extreme short positioning — historically associated with squeeze setups",
+        "low":  "Extreme long leverage — historically precedes liquidation cascades",
+    },
+    "credit": {
+        "high": "Credit spreads extremely tight — risk appetite at statistical extremes",
+        "low":  "Credit stress at extreme levels — broad risk-off regime, contagion risk elevated",
+    },
+    "cycle_phase": {
+        "high": "Financial conditions extremely loose — monetary policy highly accommodative",
+        "low":  "Financial conditions extremely tight — monetary tightening at statistical extremes",
+    },
+}
+
+
+def _extract_tail_signals(layers: dict) -> list:
+    """Scan z-scored layers for |z| >= 2.5 and return structured tail signal callouts."""
+    tail_signals = []
+
+    for name, layer in layers.items():
+        zdata = layer.get("zscore") or layer.get("zscore_anfci")
+        if not zdata or zdata.get("z") is None:
+            continue
+        z = zdata["z"]
+        if abs(z) < 2.5:
+            continue
+
+        interp_map = TAIL_INTERPRETATIONS.get(name, {})
+        invert = name in ("mvrv", "leverage_fragility", "credit", "cycle_phase")
+
+        if invert:
+            direction = "high" if z > 0 else "low"
+        else:
+            direction = "high" if z > 0 else "low"
+
+        interpretation = interp_map.get(direction, f"Statistical extreme — z={z:.2f} is a rare reading")
+
+        label_map = {
+            "mvrv": "MVRV", "institutional_flow": "ETF Flow",
+            "leverage_fragility": "Funding Rate", "credit": "HY OAS",
+            "cycle_phase": "ANFCI",
+        }
+
+        tail_signals.append({
+            "layer": label_map.get(name, name),
+            "z": round(z, 2),
+            "percentile": round(zdata.get("percentile", 0), 1),
+            "direction": "HIGH" if z > 0 else "LOW",
+            "interpretation": interpretation,
+        })
+
+    return tail_signals
+
+
+# =============================================================================
 # SYNOPSIS GENERATION
 # =============================================================================
 
-def generate_synopsis(inp: ModelInputs, cycle: dict, signal: dict, intelligence: dict) -> dict:
-    """Generate plain-English synopsis: today's catalyst, structural picture, risks."""
+def generate_synopsis(inp: ModelInputs, cycle: dict, signal: dict, intelligence: dict, layers: dict = None) -> dict:
+    """Generate plain-English synopsis: today's catalyst, structural picture, risks, tail signals."""
     months_since_qt = cycle.get("months_since_qt_end", 0)
     score = signal.get("final_score", 0)
     signal_name = signal.get("signal", "HOLD")
     aligned = signal.get("catalysts_aligned", 0)
     total = signal.get("catalysts_total", 10)
     current_phase = intelligence.get("current_phase", 1)
+
+    # Normalize ETF flow to millions for display
+    etf_wk_m = inp.etf_flow_weekly / 1e6 if abs(inp.etf_flow_weekly) > 1e5 else inp.etf_flow_weekly
 
     # ── Today's catalyst: biggest single driver from current data ──
     catalyst_parts = []
@@ -650,10 +723,10 @@ def generate_synopsis(inp: ModelInputs, cycle: dict, signal: dict, intelligence:
     elif inp.fear_greed > 80:
         catalyst_parts.append(f"Fear & Greed at {inp.fear_greed} (extreme greed) — distribution risk elevated")
 
-    if inp.etf_flow_weekly > 500:
-        catalyst_parts.append(f"ETF weekly flow +${inp.etf_flow_weekly:.0f}M — strong institutional demand")
-    elif inp.etf_flow_weekly < -500:
-        catalyst_parts.append(f"ETF weekly outflow ${inp.etf_flow_weekly:.0f}M — institutional distribution")
+    if etf_wk_m > 500:
+        catalyst_parts.append(f"ETF weekly flow +${etf_wk_m:.0f}M — strong institutional demand")
+    elif etf_wk_m < -500:
+        catalyst_parts.append(f"ETF weekly outflow ${etf_wk_m:.0f}M — institutional distribution")
 
     if abs(inp.funding_rate) < 0.005 and inp.mvrv < 1.5:
         catalyst_parts.append("Neutral funding + deep value MVRV — deleveraged base-building")
@@ -697,17 +770,21 @@ def generate_synopsis(inp: ModelInputs, cycle: dict, signal: dict, intelligence:
         risks.append(f"Excessive funding ({inp.funding_rate*100:.3f}%) — liquidation cascade risk")
     if cycle.get("chair_regime") == "NEUTRAL" and months_since_qt < 3:
         risks.append("Fed chair still neutral and regime young — transmission lag may extend")
-    if inp.etf_flow_weekly < -500:
-        risks.append(f"Sustained ETF outflows (${inp.etf_flow_weekly:.0f}M/wk) would invalidate demand thesis")
+    if etf_wk_m < -500:
+        risks.append(f"Sustained ETF outflows (${etf_wk_m:.0f}M/wk) would invalidate demand thesis")
 
     # Always-on tail risks
     risks.append("Iran/Strait of Hormuz escalation: oil >$150 breaks macro framework")
     risks.append("Regulatory action: US ETF ban or mining prohibition (low probability)")
 
+    # ── Tail signals: surface any z-scored layer with |z| >= 2.5 ──
+    tail_signals = _extract_tail_signals(layers or {})
+
     return {
         "todays_catalyst": todays_catalyst,
         "structural_picture": structural,
-        "risks_remaining": risks[:5],  # Top 5 only
+        "risks_remaining": risks[:5],
+        "tail_signals": tail_signals,
     }
 
 
@@ -920,7 +997,7 @@ def run_analysis(inputs: ModelInputs) -> dict:
     # Enhance projected_phases with composite projections
     _apply_composite_to_phases(intelligence, projections.get("composite", {}))
 
-    synopsis = generate_synopsis(inputs, cycle, result, intelligence)
+    synopsis = generate_synopsis(inputs, cycle, result, intelligence, layers)
     analog = generate_historical_analog(inputs, cycle)
     rotation = generate_rotation_analysis(inputs)
 
