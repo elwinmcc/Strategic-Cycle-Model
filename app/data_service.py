@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 # Cache: 5 min for live data
 cache = TTLCache(maxsize=100, ttl=300)
 
+# Historical series cache: 24h TTL, grows over time as new data appended
+history_cache = TTLCache(maxsize=50, ttl=86400)
+
 # API Keys from environment
 COINGLASS_API_KEY = os.environ.get("COINGLASS_API_KEY", "")
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
@@ -211,6 +214,22 @@ class CoinGlassClient:
             "symbol": symbol, "unit": "USD", "range": "7d",
         })
 
+    # ── Historical series for z-score windows ────────────────────────
+
+    async def get_sth_realized_history(self, client):
+        return await self._get(client, "index/bitcoin-sth-realized-price")
+
+    async def get_lth_realized_history(self, client):
+        return await self._get(client, "index/bitcoin-lth-realized-price")
+
+    async def get_funding_rate_long_history(self, client, exchange="Binance", symbol="BTCUSDT"):
+        return await self._get(client, "futures/funding-rate/history", {
+            "exchange": exchange, "symbol": symbol, "interval": "1d", "limit": 400,
+        })
+
+    async def get_etf_flows_history(self, client, limit=400):
+        return await self._get(client, "etf/bitcoin/flow-history", {"limit": limit})
+
 
 class FREDClient:
     """Async client for FRED API."""
@@ -243,6 +262,34 @@ class FREDClient:
         except Exception as e:
             logger.error(f"FRED error {series_id}: {e}")
             return None
+
+
+    async def get_series(self, client: httpx.AsyncClient, series_id: str, lookback_days: int = 1825) -> List[float]:
+        """Fetch full historical series from FRED, returning list of floats (oldest to newest)."""
+        start_date = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+        try:
+            resp = await client.get(self.base, params={
+                "series_id": series_id,
+                "api_key": self.api_key,
+                "file_type": "json",
+                "observation_start": start_date,
+                "sort_order": "asc",
+                "limit": 10000,
+            }, timeout=15)
+            if resp.status_code != 200:
+                logger.warning(f"FRED series {series_id}: HTTP {resp.status_code}")
+                return []
+            data = resp.json()
+            values = []
+            for o in data.get("observations", []):
+                val = o.get("value", ".")
+                if val != ".":
+                    values.append(float(val))
+            logger.info(f"FRED series {series_id}: {len(values)} observations")
+            return values
+        except Exception as e:
+            logger.error(f"FRED series error {series_id}: {e}")
+            return []
 
 
 class LiveWTIClient:
@@ -365,6 +412,13 @@ class DataServiceV76:
             except Exception as e:
                 logger.error(f"WTI live fetch error: {e}")
 
+            # Historical series for z-score scoring (24h cache, non-blocking)
+            try:
+                inputs.zscore_histories = await self._fetch_historical_data(client)
+            except Exception as e:
+                logger.error(f"Historical data fetch error: {e}")
+                inputs.zscore_histories = {}
+
         # Log population summary
         key_fields = {
             "btc_price": inputs.btc_price,
@@ -440,6 +494,7 @@ class DataServiceV76:
         self._parse_lth(inputs, lth)
         self._compute_mvrv(inputs)
         self._parse_nupl(inputs, nupl_data)
+        self._validate_nupl(inputs)
         # Sentiment / macro
         self._parse_fear_greed(inputs, fg)
         self._parse_dominance(inputs, dom)
@@ -649,6 +704,39 @@ class DataServiceV76:
             inputs.sources["nupl"] = "CoinGlass v4 NUPL"
         else:
             logger.warning(f"NUPL field not found. Available keys: {list(entry.keys())}")
+
+    def _validate_nupl(self, inputs):
+        """Cross-check fetched NUPL against MVRV-implied value.
+
+        NUPL_expected = 1 - (1/MVRV).  If drift from fetched value exceeds
+        0.02 (absolute), use the computed value and log a warning.
+        """
+        if inputs.mvrv <= 0:
+            return
+        nupl_expected = round(1 - (1 / inputs.mvrv), 4)
+        nupl_fetched = inputs.nupl
+        drift = abs(nupl_fetched - nupl_expected)
+
+        if drift > 0.02 and nupl_fetched != 0:
+            logger.warning(
+                f"NUPL drift {drift:.4f}: fetched={nupl_fetched:.4f}, "
+                f"expected={nupl_expected:.4f} (from MVRV {inputs.mvrv:.3f}). Using computed value."
+            )
+            inputs.nupl = nupl_expected
+            inputs.sources["nupl"] = f"Computed from MVRV (drift {drift:.4f} > 0.02 threshold)"
+            inputs.warnings.append(
+                f"NUPL: fetched {nupl_fetched:.4f} vs computed {nupl_expected:.4f} "
+                f"(drift {drift:.4f}). Different realized-price methodologies. Using computed."
+            )
+        else:
+            inputs.sources["nupl"] = (
+                inputs.sources.get("nupl", "CoinGlass v4 NUPL") +
+                f" (verified: drift {drift:.4f})"
+            )
+
+        inputs.nupl_fetched = nupl_fetched
+        inputs.nupl_expected = nupl_expected
+        inputs.nupl_drift = drift
 
     # ── Parse: Funding Rate History (Binance BTCUSDT) ────────────────
     # Response: [{"time":1658880000000,"open":"0.004603","high":"0.009388",
@@ -1050,6 +1138,111 @@ class DataServiceV76:
             logger.warning(f"WTI (DCOILWTICO) unavailable: {reason}")
 
     # ── Live WTI Scrape ─────────────────────────────────────────────
+
+    async def _fetch_historical_data(self, client: httpx.AsyncClient) -> Dict[str, List[float]]:
+        """Fetch historical series for z-score computation. Uses 24h cache."""
+        cache_key = "zscore_history"
+        if cache_key in history_cache:
+            return history_cache[cache_key]
+
+        logger.info("Fetching historical series for z-score windows...")
+        histories: Dict[str, List[float]] = {}
+
+        results = await asyncio.gather(
+            self.cg.get_sth_realized_history(client),
+            self.cg.get_lth_realized_history(client),
+            self.cg.get_funding_rate_long_history(client),
+            self.cg.get_etf_flows_history(client, 400),
+            self.fred.get_series(client, "BAMLH0A0HYM2", lookback_days=1825),
+            self.fred.get_series(client, "ANFCI", lookback_days=1825),
+            return_exceptions=True,
+        )
+
+        sth_hist, lth_hist, funding_hist, etf_hist, hy_hist, anfci_hist = results
+
+        # MVRV history: compute from STH/LTH pairs
+        if (not isinstance(sth_hist, Exception) and sth_hist and
+                not isinstance(lth_hist, Exception) and lth_hist and
+                isinstance(sth_hist, list) and isinstance(lth_hist, list)):
+            sth_prices = {}
+            for entry in sth_hist:
+                if isinstance(entry, dict):
+                    ts = entry.get("timestamp", 0)
+                    for key in ("sth_realized_price", "sthRealizedPrice", "value"):
+                        if key in entry and entry[key] is not None:
+                            sth_prices[ts] = float(entry[key])
+                            break
+            lth_prices = {}
+            for entry in lth_hist:
+                if isinstance(entry, dict):
+                    ts = entry.get("timestamp", 0)
+                    for key in ("lth_realized_price", "lthRealizedPrice", "value"):
+                        if key in entry and entry[key] is not None:
+                            lth_prices[ts] = float(entry[key])
+                            break
+            mvrv_series = []
+            for ts in sorted(set(sth_prices.keys()) & set(lth_prices.keys())):
+                sth_p = sth_prices[ts]
+                lth_p = lth_prices[ts]
+                rp = sth_p * 0.4 + lth_p * 0.6
+                price_entry = None
+                for entry in sth_hist:
+                    if isinstance(entry, dict) and entry.get("timestamp") == ts:
+                        price_entry = float(entry.get("price", 0))
+                        break
+                if price_entry and price_entry > 0 and rp > 0:
+                    mvrv_series.append(price_entry / rp)
+            histories["mvrv"] = mvrv_series
+            logger.info(f"MVRV history: {len(mvrv_series)} data points")
+
+        # Funding rate history
+        if not isinstance(funding_hist, Exception) and funding_hist and isinstance(funding_hist, list):
+            fr_series = []
+            for entry in funding_hist:
+                if isinstance(entry, dict):
+                    for key in ("close", "open", "c", "o"):
+                        if key in entry and entry[key] is not None:
+                            try:
+                                fr_series.append(float(entry[key]))
+                                break
+                            except (ValueError, TypeError):
+                                pass
+            histories["funding_rate"] = fr_series
+            logger.info(f"Funding rate history: {len(fr_series)} data points")
+
+        # ETF flows history
+        if not isinstance(etf_hist, Exception) and etf_hist and isinstance(etf_hist, list):
+            sorted_flows = sorted(
+                [e for e in etf_hist if isinstance(e, dict)],
+                key=lambda x: x.get("timestamp", x.get("date", x.get("t", 0))),
+            )
+            weekly_flows = []
+            daily_flows = []
+            for entry in sorted_flows:
+                flow = 0.0
+                for key in ("flow_usd", "totalNetFlow", "netFlow", "total_net_flow", "value"):
+                    if key in entry and entry[key] is not None:
+                        flow = float(entry[key])
+                        break
+                daily_flows.append(flow)
+            # Rolling 5-day sums
+            for i in range(4, len(daily_flows)):
+                weekly_flows.append(sum(daily_flows[i-4:i+1]))
+            # Convert to millions if needed
+            histories["etf_weekly"] = [f / 1e6 if abs(f) > 1e5 else f for f in weekly_flows]
+            logger.info(f"ETF weekly flow history: {len(weekly_flows)} data points")
+
+        # FRED series (already plain float lists)
+        if not isinstance(hy_hist, Exception):
+            histories["hy_oas"] = hy_hist
+            logger.info(f"HY OAS history: {len(hy_hist)} data points")
+
+        if not isinstance(anfci_hist, Exception):
+            histories["anfci"] = anfci_hist
+            logger.info(f"ANFCI history: {len(anfci_hist)} data points")
+
+        history_cache[cache_key] = histories
+        return histories
 
     async def _fetch_wti_live(self, client: httpx.AsyncClient, inputs: ModelInputs):
         """Scrape live WTI from Yahoo Finance (CL=F) with Stooq fallback.

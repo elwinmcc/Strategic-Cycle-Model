@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 
 from model.btc_model_v76 import ModelInputs, clamp, interp
 from model.projection_engine import generate_projections
+from model.zscore import score_with_zscore
 
 
 # =============================================================================
@@ -59,13 +60,20 @@ def score_all_layers(inp: ModelInputs) -> Tuple[Dict[str, dict], dict]:
     """Score all 14 layers. Returns (layers_dict, cycle_assessment)."""
     layers = {}
 
-    # -- 1. INSTITUTIONAL FLOW (15%) --
+    # -- 1. INSTITUTIONAL FLOW (15%) -- z-score scoring with interp fallback
     wf = inp.etf_flow_weekly / 1e6 if abs(inp.etf_flow_weekly) > 1e5 else inp.etf_flow_weekly
-    etf_s = interp(wf, [(-500, 15), (-100, 35), (0, 50), (100, 65), (500, 80), (1000, 92)])
+    etf_hist = inp.zscore_histories.get("etf_weekly", [])
+    etf_zdata = score_with_zscore(wf, etf_hist[-365:], k=0.6, invert=False)
+    if etf_zdata["score"] is not None:
+        etf_s = etf_zdata["score"]
+    else:
+        # LEGACY fallback: raw threshold interpolation
+        etf_s = interp(wf, [(-500, 15), (-100, 35), (0, 50), (100, 65), (500, 80), (1000, 92)])
     layers["institutional_flow"] = {
         "score": round(etf_s), "weight": 0.15,
         "contribution": round(etf_s * 0.15, 2),
         "reasoning": f"ETF weekly ${wf:+.0f}M -> {etf_s:.0f}.",
+        "zscore": etf_zdata,
     }
 
     # -- 2. INSTITUTIONAL STRUCTURE (10%) --
@@ -78,14 +86,21 @@ def score_all_layers(inp: ModelInputs) -> Tuple[Dict[str, dict], dict]:
         "reasoning": f"Cumulative ${inp.etf_cumulative/1e9:.1f}B -> {cum_score}. CB premium {inp.coinbase_premium:+.2f}% adj {prem_adj:+d}.",
     }
 
-    # -- 3. LEVERAGE FRAGILITY (13%) --
-    fr_s = interp(inp.funding_rate * 100, [(-5, 90), (-2, 75), (0, 60), (2, 50), (5, 35), (10, 15)])
+    # -- 3. LEVERAGE FRAGILITY (13%) -- z-score scoring with interp fallback
+    fr_hist = inp.zscore_histories.get("funding_rate", [])
+    fr_zdata = score_with_zscore(inp.funding_rate, fr_hist[-365:], k=0.6, invert=True)
+    if fr_zdata["score"] is not None:
+        fr_s = fr_zdata["score"]
+    else:
+        # LEGACY fallback: raw threshold interpolation
+        fr_s = interp(inp.funding_rate * 100, [(-5, 90), (-2, 75), (0, 60), (2, 50), (5, 35), (10, 15)])
     ls_adj = -5 if inp.long_short_ratio > 2.0 else 5 if inp.long_short_ratio < 0.8 else 0
     lev = clamp(fr_s + ls_adj)
     layers["leverage_fragility"] = {
         "score": round(lev), "weight": 0.13,
         "contribution": round(lev * 0.13, 2),
         "reasoning": f"Funding {inp.funding_rate*100:.4f}% -> {fr_s:.0f}. L/S {inp.long_short_ratio:.2f} adj {ls_adj:+d}.",
+        "zscore": fr_zdata,
     }
 
     # -- 4. DERIVATIVES (10%) --
@@ -97,15 +112,22 @@ def score_all_layers(inp: ModelInputs) -> Tuple[Dict[str, dict], dict]:
         "reasoning": f"Basis {inp.futures_basis:.1f}% -> {basis_s:.0f}. Funding component {fr_s:.0f}.",
     }
 
-    # -- 5. MVRV (12%) --
-    mvrv_s = interp(inp.mvrv, [
-        (0.5, 98), (0.8, 95), (1.0, 85), (1.2, 70), (1.5, 55),
-        (2.0, 40), (2.5, 25), (3.0, 15), (3.7, 5)
-    ])
+    # -- 5. MVRV (12%) -- z-score scoring with interp fallback
+    mvrv_hist = inp.zscore_histories.get("mvrv", [])
+    mvrv_zdata = score_with_zscore(inp.mvrv, mvrv_hist[-730:], k=0.6, invert=True)
+    if mvrv_zdata["score"] is not None:
+        mvrv_s = mvrv_zdata["score"]
+    else:
+        # LEGACY fallback: raw threshold interpolation
+        mvrv_s = interp(inp.mvrv, [
+            (0.5, 98), (0.8, 95), (1.0, 85), (1.2, 70), (1.5, 55),
+            (2.0, 40), (2.5, 25), (3.0, 15), (3.7, 5)
+        ])
     layers["mvrv"] = {
         "score": round(mvrv_s), "weight": 0.12,
         "contribution": round(mvrv_s * 0.12, 2),
         "reasoning": f"MVRV {inp.mvrv:.3f} -> {mvrv_s:.0f}. RP ${inp.realized_price:,.0f}. STH ${inp.sth_realized_price:,.0f}, LTH ${inp.lth_realized_price:,.0f}.",
+        "zscore": mvrv_zdata,
     }
 
     # -- 6. LIQUIDITY REGIME (8%) --
@@ -149,8 +171,14 @@ def score_all_layers(inp: ModelInputs) -> Tuple[Dict[str, dict], dict]:
         "regime": regime_label,
     }
 
-    # -- 7. CYCLE PHASE (5%) --
-    anfci_s = interp(inp.anfci, [(-0.8, 90), (-0.5, 75), (-0.2, 60), (0, 50), (0.2, 35), (0.5, 15)])
+    # -- 7. CYCLE PHASE (5%) -- ANFCI uses z-score scoring with interp fallback
+    anfci_hist = inp.zscore_histories.get("anfci", [])
+    anfci_zdata = score_with_zscore(inp.anfci, anfci_hist[-1825:], k=0.6, invert=True)
+    if anfci_zdata["score"] is not None:
+        anfci_s = anfci_zdata["score"]
+    else:
+        # LEGACY fallback: raw threshold interpolation
+        anfci_s = interp(inp.anfci, [(-0.8, 90), (-0.5, 75), (-0.2, 60), (0, 50), (0.2, 35), (0.5, 15)])
     yc_s = interp(inp.yield_curve_2s10s, [(-1.0, 15), (-0.5, 30), (0, 50), (0.5, 65), (1.0, 75), (2.0, 85)])
     claims_k = inp.initial_claims / 1000
     claims_s = interp(claims_k, [(180, 70), (210, 65), (250, 55), (300, 45), (350, 30), (450, 15)])
@@ -170,6 +198,7 @@ def score_all_layers(inp: ModelInputs) -> Tuple[Dict[str, dict], dict]:
         "contribution": round(cycle * 0.05, 2),
         "reasoning": f"ANFCI {inp.anfci:.2f}->{anfci_s:.0f}. 2s10s {inp.yield_curve_2s10s:+.2f}%->{yc_s:.0f}. Claims {claims_k:.0f}K->{claims_s:.0f}. Phase: {biz_phase}.",
         "phase": biz_phase,
+        "zscore_anfci": anfci_zdata,
     }
 
     # -- 8. FED TRANSITION (5%) --
@@ -221,14 +250,21 @@ def score_all_layers(inp: ModelInputs) -> Tuple[Dict[str, dict], dict]:
         "reasoning": f"P/C {inp.put_call_ratio:.2f} -> {pc_s:.0f} (contrarian). Max pain ${inp.max_pain:,.0f}.",
     }
 
-    # -- 11. CREDIT (5%) --
-    credit_s = interp(inp.hy_oas, [
-        (2.0, 90), (2.5, 82), (3.0, 72), (3.5, 62), (4.0, 50), (5.0, 35), (6.0, 20), (8.0, 10)
-    ])
+    # -- 11. CREDIT (5%) -- z-score scoring with interp fallback
+    hy_hist = inp.zscore_histories.get("hy_oas", [])
+    hy_zdata = score_with_zscore(inp.hy_oas, hy_hist[-1825:], k=0.6, invert=True)
+    if hy_zdata["score"] is not None:
+        credit_s = hy_zdata["score"]
+    else:
+        # LEGACY fallback: raw threshold interpolation
+        credit_s = interp(inp.hy_oas, [
+            (2.0, 90), (2.5, 82), (3.0, 72), (3.5, 62), (4.0, 50), (5.0, 35), (6.0, 20), (8.0, 10)
+        ])
     layers["credit"] = {
         "score": round(credit_s), "weight": 0.05,
         "contribution": round(credit_s * 0.05, 2),
         "reasoning": f"HY OAS {inp.hy_oas:.2f}% -> {credit_s:.0f}. {'Orderly' if inp.hy_oas < 4.5 else 'Stress'}.",
+        "zscore": hy_zdata,
     }
 
     # -- 12. OIL/ENERGY RISK (3%) --
@@ -910,6 +946,9 @@ def run_analysis(inputs: ModelInputs) -> dict:
             "sth_realized_price": inputs.sth_realized_price,
             "lth_realized_price": inputs.lth_realized_price,
             "nupl": inputs.nupl,
+            "nupl_fetched": inputs.nupl_fetched,
+            "nupl_expected": inputs.nupl_expected,
+            "nupl_drift": inputs.nupl_drift,
             "fear_greed": inputs.fear_greed,
             "fear_greed_label": inputs.fear_greed_label,
             "hy_oas": inputs.hy_oas,

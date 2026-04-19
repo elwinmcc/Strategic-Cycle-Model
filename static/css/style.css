@@ -461,6 +461,56 @@ body {
     line-height: 1.4;
 }
 
+/* Z-Score Badge & Info */
+.zscore-badge {
+    display: inline-block;
+    background: rgba(163, 113, 247, 0.2);
+    color: var(--accent-purple);
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.layer-zscore-info {
+    display: flex;
+    gap: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--accent-purple);
+    margin-bottom: 2px;
+    opacity: 0.85;
+}
+
+.zscore-val, .zscore-pct, .zscore-hist {
+    background: rgba(163, 113, 247, 0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+/* Audit section extras */
+.audit-section {
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--border-color);
+}
+
+.audit-section h4 {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    margin-bottom: var(--space-sm);
+}
+
+.drift-warning {
+    color: var(--accent-yellow) !important;
+    font-weight: 600;
+}
+
 /* ═══════════════════════════════════════════════════════════
    MARKET DATA
    ═══════════════════════════════════════════════════════════ */

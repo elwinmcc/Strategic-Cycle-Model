@@ -38,6 +38,9 @@ class ModelInputs:
     sth_realized_price: float = 0.0
     lth_realized_price: float = 0.0
     nupl: float = 0.0
+    nupl_fetched: float = 0.0
+    nupl_expected: float = 0.0
+    nupl_drift: float = 0.0
 
     # Sentiment
     fear_greed: int = 50
@@ -92,6 +95,9 @@ class ModelInputs:
     warnings: List[str] = field(default_factory=list)
     timestamp: str = ""
 
+    # Historical series for z-score computation (populated by data_service)
+    zscore_histories: Dict = field(default_factory=dict)
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -105,6 +111,9 @@ class ModelInputs:
             "sth_realized_price": self.sth_realized_price,
             "lth_realized_price": self.lth_realized_price,
             "nupl": self.nupl,
+            "nupl_fetched": self.nupl_fetched,
+            "nupl_expected": self.nupl_expected,
+            "nupl_drift": self.nupl_drift,
             "fear_greed": self.fear_greed,
             "fear_greed_label": self.fear_greed_label,
             "coinbase_premium": self.coinbase_premium,

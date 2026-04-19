@@ -728,15 +728,30 @@ function updateLayersGrouped(data) {
             const barColor = getScoreColor(score);
             const label = LAYER_LABELS[name] || name;
 
+            // Z-score data (from layer.zscore or layer.zscore_anfci)
+            const zdata = layer.zscore || layer.zscore_anfci || null;
+            const isZscored = zdata && zdata.method === 'zscore';
+
             html += `<div class="layer-card">`;
             html += `<div class="layer-header">`;
-            html += `<span class="layer-name">${label}</span>`;
+            html += `<span class="layer-name">${label}`;
+            if (isZscored) {
+                html += `<span class="zscore-badge">z</span>`;
+            }
+            html += `</span>`;
             html += `<span class="layer-weight">${weight}%</span>`;
             html += `</div>`;
             html += `<div class="layer-bar-row">`;
             html += `<div class="layer-bar"><div class="layer-bar-fill" style="width:${score}%;background:${barColor};"></div></div>`;
             html += `<span class="layer-score">${score}</span>`;
             html += `</div>`;
+            if (isZscored && zdata.z !== null) {
+                html += `<div class="layer-zscore-info">`;
+                html += `<span class="zscore-val">z=${zdata.z.toFixed(2)}</span>`;
+                html += `<span class="zscore-pct">P${(zdata.percentile || 0).toFixed(0)}</span>`;
+                html += `<span class="zscore-hist">${zdata.history_len}d window</span>`;
+                html += `</div>`;
+            }
             html += `<div class="layer-contribution">Contribution: ${contribution}</div>`;
             html += `<div class="layer-reasoning">${layer.reasoning || ''}</div>`;
             html += `</div>`;
@@ -1212,12 +1227,47 @@ function updateMarketData(data) {
 function updateAudit(data) {
     const sources = data.sources || {};
     const warnings = data.warnings || [];
+    const md = data.market_data || {};
+    const layers = data.layers || {};
 
     const sourcesList = document.getElementById('sources-list');
     let html = `<h3>${Object.keys(sources).length} Verified Sources</h3>`;
     for (const [key, src] of Object.entries(sources).sort()) {
         html += `<div class="source-item"><span class="source-check">&#10003;</span> <span class="source-key">${key}</span> <span class="source-val">${src}</span></div>`;
     }
+
+    // NUPL validation detail
+    if (md.nupl_drift !== undefined) {
+        html += '<div class="audit-section"><h4>NUPL Validation</h4>';
+        html += `<div class="source-item"><span class="source-key">Fetched NUPL</span> <span class="source-val">${(md.nupl_fetched || 0).toFixed(4)}</span></div>`;
+        html += `<div class="source-item"><span class="source-key">Expected (1-1/MVRV)</span> <span class="source-val">${(md.nupl_expected || 0).toFixed(4)}</span></div>`;
+        html += `<div class="source-item"><span class="source-key">Drift</span> <span class="source-val ${md.nupl_drift > 0.02 ? 'drift-warning' : ''}">${(md.nupl_drift || 0).toFixed(4)}${md.nupl_drift > 0.02 ? ' (using computed)' : ' (within threshold)'}</span></div>`;
+        html += `<div class="source-item"><span class="source-key">Active Value</span> <span class="source-val">${(md.nupl || 0).toFixed(4)}</span></div>`;
+        html += '</div>';
+    }
+
+    // Z-score scoring method summary
+    const zLayers = [];
+    for (const [name, layer] of Object.entries(layers)) {
+        const zd = layer.zscore || layer.zscore_anfci;
+        if (zd) {
+            const label = LAYER_LABELS[name] || name;
+            zLayers.push({ name: label, ...zd });
+        }
+    }
+    if (zLayers.length > 0) {
+        html += '<div class="audit-section"><h4>Z-Score Scoring</h4>';
+        for (const zl of zLayers) {
+            const method = zl.method === 'zscore' ? 'Z-Score' : 'Fallback (interp)';
+            html += `<div class="source-item">`;
+            html += `<span class="source-key">${zl.name}</span>`;
+            html += `<span class="source-val">${method} · ${zl.history_len}d history`;
+            if (zl.z !== null) html += ` · z=${zl.z.toFixed(2)}`;
+            html += `</span></div>`;
+        }
+        html += '</div>';
+    }
+
     sourcesList.innerHTML = html;
 
     const warningsList = document.getElementById('warnings-list');
