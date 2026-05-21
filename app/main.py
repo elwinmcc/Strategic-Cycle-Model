@@ -70,7 +70,7 @@ async def analyze():
 
         # If no meaningful data was fetched (no API keys or all calls failed),
         # fall back to demo data so the dashboard isn't blank
-        if inputs.btc_price == 0 and not inputs.sources:
+        if inputs.btc_price == 0 and inputs.fed_bs == 0:
             logger.warning("No live data fetched — falling back to demo data. Set COINGLASS_API_KEY and FRED_API_KEY env vars.")
             inputs = _create_demo_inputs()
             inputs.warnings.append("Using demo data — set COINGLASS_API_KEY and FRED_API_KEY environment variables for live data")

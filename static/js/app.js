@@ -122,7 +122,7 @@ function updatePositionTriplet(data) {
     const el = document.getElementById('position-triplet');
     if (!el) return;
 
-    const months = pos.months_since_qt_end || 0;
+    const netLiq = pos.net_liquidity_b || 0;
     const regime = (pos.liquidity_regime || '--').replace(/_/g, ' ');
     const biz = (pos.business_cycle || pos.business_phase || '--').replace(/_/g, ' ');
     const btcPh = (pos.btc_cycle || pos.btc_phase || '--').replace(/_/g, ' ');
@@ -131,7 +131,7 @@ function updatePositionTriplet(data) {
         {
             label: 'Liquidity Regime',
             value: regime,
-            sub: `${months.toFixed(0)} months post-QT`,
+            sub: `Net Liq $${(netLiq/1000).toFixed(1)}T`,
             icon: 'L',
         },
         {
@@ -442,16 +442,14 @@ function updateLiquidityDashboard(data) {
     const netLiq = md.net_liquidity_b || 0;
     const m2Growth = md.global_m2_growth || 0;
     const regime = (cycle.liquidity_regime || '--').replace(/_/g, ' ');
-    const monthsPostQt = cycle.months_since_qt_end || 0;
-
     let html = '';
 
     // ── Regime banner ──
-    const regimeClass = regime.includes('QE') ? 'easing' : regime.includes('LAG') ? 'tightening' : 'neutral';
+    const regimeClass = regime.includes('EXPAN') ? 'easing' : regime.includes('TIGHT') ? 'tightening' : regime.includes('ACCOM') ? 'easing' : 'neutral';
     html += `<div class="liq-regime-banner ${regimeClass}">`;
     html += `<div class="liq-regime-label">Liquidity Regime</div>`;
     html += `<div class="liq-regime-value">${regime}</div>`;
-    html += `<div class="liq-regime-sub">${monthsPostQt.toFixed(0)} months post-QT end</div>`;
+    html += `<div class="liq-regime-sub">Fed BS ${(fedBs/1000).toFixed(2)}T &middot; Net Liq $${(netLiq/1000).toFixed(2)}T</div>`;
     html += '</div>';
 
     // ── Component cards (Fed BS, RRP, TGA, Net Liq) ──
@@ -620,23 +618,35 @@ function updateHistoricalAnalog(data) {
 
     // Comparison table
     html += '<div class="analog-table">';
-    html += '<div class="analog-row analog-head"><span>Metric</span><span>Q4 2019</span><span>Current</span><span>Match</span></div>';
+    html += '<div class="analog-row analog-head"><span>Metric</span><span>Analog</span><span>Current</span><span>Match</span></div>';
     for (const m of metrics) {
         const matchC = m.match >= 80 ? 'high' : m.match >= 60 ? 'medium' : 'low';
         html += `<div class="analog-row">`;
         html += `<span class="analog-metric">${m.name}</span>`;
-        html += `<span class="analog-past">${m.q4_2019}</span>`;
+        html += `<span class="analog-past">${m.analog || m.q4_2019 || '--'}</span>`;
         html += `<span class="analog-curr">${m.current}</span>`;
         html += `<span class="analog-mpct match-${matchC}">${m.match}%</span>`;
         html += `</div>`;
     }
     html += '</div>';
 
+    // All analogs comparison
+    const allAnalogs = analog.all_analogs || [];
+    if (allAnalogs.length > 1) {
+        html += '<div class="analog-all">';
+        html += '<h4>All Analog Matches</h4>';
+        for (const a of allAnalogs) {
+            const ac = a.match >= 70 ? 'high' : a.match >= 50 ? 'medium' : 'low';
+            html += `<div class="analog-row"><span>${a.period}</span><span class="analog-mpct match-${ac}">${a.match}%</span></div>`;
+        }
+        html += '</div>';
+    }
+
     // What happened next
     const happened = analog.what_happened_next || [];
     if (happened.length > 0) {
         html += '<div class="analog-next">';
-        html += '<h4>What Happened Next in the Analog Period</h4>';
+        html += '<h4>What Happened Next</h4>';
         html += '<ul>';
         for (const h of happened) {
             html += `<li>${h}</li>`;
@@ -1071,15 +1081,15 @@ function getScoreColor(score) {
 // ═══════════════════════════════════════════════════════════════════
 
 const CATALYST_LABELS = {
-    treasury_stealth: 'Treasury Stealth Easing',
-    bank_deregulation: 'Bank Deregulation',
-    rate_cuts_expected: 'Rate Cuts Expected <6mo',
-    oil_resolved: 'Oil Resolved (<$85 WTI)',
+    tga_drawdown: 'TGA Drawdown (<$500B)',
+    fed_bs_expanding: 'Fed BS Expanding (>$7T)',
+    conditions_loose: 'Loose Conditions (ANFCI <-0.2)',
+    oil_benign: 'Oil Benign (<$85 WTI)',
     mvrv_value: 'MVRV Value Zone (1.0-1.5)',
     sentiment_extreme: 'Extreme Fear (F&G <20)',
     etf_inflows: 'ETF Net Inflows',
-    regime_maturing: 'Regime Maturing (>3mo)',
-    chair_dovish: 'Chair Dovish Bias',
+    yield_curve_positive: 'Yield Curve Positive',
+    funding_neutral: 'Funding Rate Neutral',
     credit_orderly: 'Credit Orderly (HY OAS <4%)',
 };
 
